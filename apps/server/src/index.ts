@@ -9,7 +9,14 @@ const { Server } = colyseus;
 const PORT = Number(process.env.PORT ?? 2567);
 const app = express();
 
-app.use(cors({ origin: ["http://localhost:3000", "http://127.0.0.1:3000"] }));
+// 허용할 웹 주소. 배포 시 CLIENT_ORIGIN 환경변수로 지정(쉼표로 여러 개 가능).
+// 미지정 시 로컬 개발 주소를 허용한다.
+const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "http://localhost:3000,http://127.0.0.1:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({ origin: allowedOrigins }));
 app.get("/", (_request, response) => {
   response.send("Raid simulator server is running.");
 });

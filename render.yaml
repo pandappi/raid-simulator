@@ -1,0 +1,17 @@
+# Render 배포 설정 (Colyseus 게임 서버)
+# Render 대시보드에서 "New > Blueprint"로 이 저장소를 연결하면 자동으로 읽힌다.
+services:
+  - type: web
+    name: raid-simulator-server
+    runtime: node
+    region: singapore # 한국에서 가장 가까운 지역
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @raid-simulator/shared build && pnpm --filter server build
+    startCommand: pnpm --filter server start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      # 배포 후 Vercel 웹 주소를 여기에 넣는다(예: https://your-app.vercel.app)
+      - key: CLIENT_ORIGIN
+        sync: false
