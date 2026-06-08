@@ -73,13 +73,21 @@ export function useKeyboardInput({ enabled }: UseKeyboardInputParams) {
 
     const handleKeyDown = (event: KeyboardEvent) => handleKey(event, true);
     const handleKeyUp = (event: KeyboardEvent) => handleKey(event, false);
+    // 창 포커스를 잃으면 keyup이 안 와 키가 눌린 채로 남아 계속 이동할 수 있다.
+    // 이때 모든 입력을 강제로 해제한다.
+    const handleBlur = () => {
+      inputRef.current = { up: false, down: false, left: false, right: false };
+      setMoveInput(inputRef.current);
+    };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
       inputRef.current = { up: false, down: false, left: false, right: false };
       setMoveInput(inputRef.current);
     };

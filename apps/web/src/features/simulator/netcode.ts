@@ -3,8 +3,6 @@ import { CLIENT_SIM_DT, stepMovement, type ClientInput, type MovementState } fro
 // 상대 플레이어를 과거 시점으로 렌더링해 부드러운 보간을 확보(ms).
 // 서버 패치 간격(50ms)보다 약간 크게 잡아 보간을 보장하되 격차를 줄인다.
 const INTERP_DELAY = 70;
-// 스냅샷이 끊겼을 때 속도로 외삽할 수 있는 최대 시간(ms).
-const MAX_EXTRAP = 120;
 // 스냅샷 버퍼 보관 시간(ms).
 const BUFFER_MS = 1000;
 // 한 프레임에서 처리할 최대 시뮬레이션 스텝 수(탭 비활성 후 폭주 방지).
@@ -154,8 +152,10 @@ export function ingestSnapshot(id: string, x: number, z: number, rotation: numbe
 }
 
 /**
- * 상대 캐릭터: INTERP_DELAY 만큼 과거 시점을 두 스냅샷 사이에서 보간.
- * 최신 데이터보다 앞선 시점이면 속도로 외삽(MAX_EXTRAP 한도).
+ * 상대 캐릭터: INTERP_DELAY 만큼 과거 시점을 두 스냅샷 사이에서 보간한다.
+ * 최신 스냅샷보다 앞선 시점이면 **마지막 위치를 유지**한다(외삽하지 않음).
+ *   - 서버는 위치가 변할 때만 패치를 보내므로, 정지하면 마지막 패치값이 곧 실제 정지 위치다.
+ *   - 외삽하면 멈춘 플레이어를 계속 앞으로 미끄러뜨려(오버슈트) 실제 위치와 어긋난다.
  */
 export function sampleRemote(id: string): MovementState | null {
   const buf = buffers.get(id);
@@ -183,20 +183,10 @@ export function sampleRemote(id: string): MovementState | null {
     }
   }
 
+  // renderTime이 가장 최신 스냅샷보다 미래(=업데이트가 끊김) → 마지막 위치 유지.
   const newest = buf[buf.length - 1];
-  const prev = buf[buf.length - 2];
-  if (newest && prev && renderTime > newest.t) {
-    const span = newest.t - prev.t || 1;
-    const ahead = Math.min(renderTime - newest.t, MAX_EXTRAP);
-    const f = ahead / span;
-    return {
-      x: newest.x + (newest.x - prev.x) * f,
-      z: newest.z + (newest.z - prev.z) * f,
-      rotation: newest.rotation
-    };
-  }
-
-  return { x: first.x, z: first.z, rotation: first.rotation };
+  const hold = renderTime > (newest?.t ?? 0) && newest ? newest : first;
+  return { x: hold.x, z: hold.z, rotation: hold.rotation };
 }
 
 function lerpAngle(a: number, b: number, f: number): number {
