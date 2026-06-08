@@ -8,7 +8,6 @@ type JoinPanelProps = {
 };
 
 export function JoinPanel({ connectionStatus, errorMessage, onJoin }: JoinPanelProps) {
-  const [name, setName] = useState("");
   const [role, setRole] = useState<PlayerRole | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const isConnecting = connectionStatus === "connecting";
@@ -17,37 +16,18 @@ export function JoinPanel({ connectionStatus, errorMessage, onJoin }: JoinPanelP
     event.preventDefault();
     setLocalError(null);
 
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setLocalError("이름을 입력해주세요.");
-      return;
-    }
-
     if (!role) {
       setLocalError("역할을 선택해주세요.");
       return;
     }
 
-    await onJoin(trimmedName, role);
+    await onJoin("", role);
   }
 
   return (
     <form className="join-panel" onSubmit={handleSubmit}>
       <h1>Raid Simulator MVP</h1>
-      <p>8인 Room에 접속해 역할을 고르고 같은 아레나에서 위치를 동기화합니다.</p>
-
-      <label className="field-label" htmlFor="player-name">
-        이름
-      </label>
-      <input
-        id="player-name"
-        className="name-input"
-        value={name}
-        maxLength={20}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Alice"
-        disabled={isConnecting}
-      />
+      <p>역할을 고르면 같은 아레나에 접속해 위치를 동기화합니다.</p>
 
       <div className="role-grid" aria-label="역할 선택">
         {PLAYER_ROLES.map((playerRole) => (

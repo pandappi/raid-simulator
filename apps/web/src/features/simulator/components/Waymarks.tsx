@@ -15,11 +15,15 @@ const CIRCLE_WAYMARKS: CircleWaymark[] = [
   { label: "D", color: "#9c6ade", position: [-10, 0.085, 0] }
 ];
 
+// 중앙에서 15m 떨어진 대각선 지점 (각 축 = 15 / √2).
+const SQUARE_DISTANCE = 15;
+const SQUARE_AXIS = SQUARE_DISTANCE * Math.SQRT1_2;
+
 const SQUARE_WAYMARKS: SquareWaymark[] = [
-  { label: "1", color: "#ff4d4f", position: [-15, 0.09, -15] },
-  { label: "2", color: "#ffd43b", position: [15, 0.09, -15] },
-  { label: "3", color: "#339af0", position: [15, 0.09, 15] },
-  { label: "4", color: "#9c6ade", position: [-15, 0.09, 15] }
+  { label: "1", color: "#ff4d4f", position: [-SQUARE_AXIS, 0.09, -SQUARE_AXIS] },
+  { label: "2", color: "#ffd43b", position: [SQUARE_AXIS, 0.09, -SQUARE_AXIS] },
+  { label: "3", color: "#339af0", position: [SQUARE_AXIS, 0.09, SQUARE_AXIS] },
+  { label: "4", color: "#9c6ade", position: [-SQUARE_AXIS, 0.09, SQUARE_AXIS] }
 ];
 
 export function Waymarks() {

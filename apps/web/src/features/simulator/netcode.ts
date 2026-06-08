@@ -6,8 +6,10 @@ const INTERP_DELAY = 100;
 const MAX_EXTRAP = 120;
 // 스냅샷 버퍼 보관 시간(ms).
 const BUFFER_MS = 1000;
-// 예측 위치를 서버 권위 위치로 끌어당기는 강도(클수록 빠르게 수렴).
-const RECONCILE_LAMBDA = 6;
+// 멈춰 있을 때 예측 위치를 서버 권위 위치로 정렬하는 강도.
+const RECONCILE_LAMBDA = 8;
+// 이 거리 이상 어긋나면(텔레포트/디싱크) 즉시 스냅(m).
+const SNAP_THRESHOLD = 2;
 
 type Snap = { t: number; x: number; z: number; rotation: number };
 
@@ -86,9 +88,22 @@ export function stepSelf(dt: number, cameraYaw: number): MovementState | null {
   const next = stepMovement(selfPredicted, moveInput, dt);
 
   if (selfServer) {
-    const k = 1 - Math.exp(-RECONCILE_LAMBDA * dt);
-    next.x += (selfServer.x - next.x) * k;
-    next.z += (selfServer.z - next.z) * k;
+    const errX = selfServer.x - next.x;
+    const errZ = selfServer.z - next.z;
+    const dist = Math.hypot(errX, errZ);
+    const moving = moveInput.up || moveInput.down || moveInput.left || moveInput.right;
+
+    if (dist > SNAP_THRESHOLD) {
+      // 큰 디싱크: 즉시 권위 위치로 맞춘다.
+      next.x = selfServer.x;
+      next.z = selfServer.z;
+    } else if (!moving) {
+      // 움직일 땐 예측을 신뢰하고, 멈췄을 때만 서버 위치로 부드럽게 정렬해
+      // 지연된 서버 위치로 끌려가며 생기는 "따닥" 현상을 막는다.
+      const k = 1 - Math.exp(-RECONCILE_LAMBDA * dt);
+      next.x += errX * k;
+      next.z += errZ * k;
+    }
   }
 
   selfPredicted = next;
