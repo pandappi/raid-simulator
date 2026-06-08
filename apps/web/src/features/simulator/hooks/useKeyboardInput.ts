@@ -60,12 +60,22 @@ export function useKeyboardInput({ enabled, sendInput }: UseKeyboardInputParams)
       }
 
       event.preventDefault();
+      // keydown 자동 반복으로 같은 상태가 다시 와도 중복 전송하지 않는다.
+      if (inputRef.current[key] === value) {
+        return;
+      }
+
       inputRef.current = {
         ...inputRef.current,
         [key]: value
       };
       // 클라이언트 예측이 매 프레임 즉시 읽을 수 있도록 보유 입력을 공유한다.
       setMoveInput(inputRef.current);
+      // 정지/이동 신호를 서버에 즉시 알려 멈춤 오차와 위치 격차를 줄인다.
+      sendInput({
+        ...inputRef.current,
+        cameraYaw: useSimulatorStore.getState().cameraYaw
+      });
     }
 
     const handleKeyDown = (event: KeyboardEvent) => handleKey(event, true);

@@ -1,7 +1,8 @@
 import { stepMovement, type ClientInput, type MovementState } from "@raid-simulator/shared";
 
 // 상대 플레이어를 과거 시점으로 렌더링해 부드러운 보간을 확보(ms).
-const INTERP_DELAY = 100;
+// 서버 패치 간격(50ms)보다 약간 크게 잡아 보간을 보장하되, 격차를 줄인다.
+const INTERP_DELAY = 70;
 // 스냅샷이 끊겼을 때 속도로 외삽할 수 있는 최대 시간(ms).
 const MAX_EXTRAP = 120;
 // 스냅샷 버퍼 보관 시간(ms).
