@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm --filter @raid-simulator/shared build && next build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
