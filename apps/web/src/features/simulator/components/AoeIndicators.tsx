@@ -8,17 +8,39 @@ export function AoeIndicators() {
   const aoes = useSimulatorStore((state) => state.gimmick.aoes);
   return (
     <group>
-      {aoes.map((aoe) => (aoe.kind === "cone" ? <ConeAoe key={aoe.id} aoe={aoe} /> : <CircleAoe key={aoe.id} aoe={aoe} />))}
+      {aoes.map((aoe) => {
+        if (aoe.kind === "cloneSpot") {
+          return <CloneSpot key={aoe.id} aoe={aoe} />;
+        }
+        return aoe.kind === "cone" || aoe.kind === "kick" ? <ConeAoe key={aoe.id} aoe={aoe} /> : <CircleAoe key={aoe.id} aoe={aoe} />;
+      })}
     </group>
   );
 }
 
 function CircleAoe({ aoe }: { aoe: AoeView }) {
+  const color = aoe.kind === "clone" ? "#9b7cff" : AOE_COLOR;
+  const opacity = aoe.kind === "clone" ? 0.24 : 0.42;
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[aoe.x, 0.08, aoe.z]}>
       <circleGeometry args={[aoe.radius, 48]} />
-      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} />
+      <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
     </mesh>
+  );
+}
+
+function CloneSpot({ aoe }: { aoe: AoeView }) {
+  return (
+    <group position={[aoe.x, 0, aoe.z]}>
+      <mesh position={[0, 0.42, 0]}>
+        <cylinderGeometry args={[0.32, 0.38, 0.84, 18]} />
+        <meshBasicMaterial color="#b79cff" transparent opacity={0.58} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.09, 0]}>
+        <ringGeometry args={[0.5, 0.64, 32]} />
+        <meshBasicMaterial color="#d8c8ff" transparent opacity={0.68} depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 
@@ -47,7 +69,7 @@ function ConeAoe({ aoe }: { aoe: AoeView }) {
 
   return (
     <mesh geometry={geometry} position={[aoe.x, 0.08, aoe.z]}>
-      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} side={2} />
+      <meshBasicMaterial color={aoe.kind === "kick" ? "#ff5f6d" : AOE_COLOR} transparent opacity={0.42} depthWrite={false} side={2} />
     </mesh>
   );
 }

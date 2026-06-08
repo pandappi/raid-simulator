@@ -103,6 +103,7 @@ input {
 
 .role-button,
 .join-button,
+.guide-button,
 .leave-button {
   min-height: 42px;
   border: 0;
@@ -129,7 +130,16 @@ input {
   color: #fff;
 }
 
-.join-button:disabled {
+.guide-button {
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #1e293b;
+}
+
+.join-button:disabled,
+.guide-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -233,17 +243,33 @@ input {
 }
 
 /* --- 기믹: 머리징/탑/보스 라벨 --- */
-.marker-chip {
-  margin: 0 auto 3px;
-  width: fit-content;
-  padding: 2px 7px;
-  border-radius: 999px;
-  color: #0b0e14;
-  font-size: 11px;
-  font-weight: 900;
-  text-align: center;
-  box-shadow: 0 3px 9px rgba(0, 0, 0, 0.3);
+.marker-icon {
+  --marker-color: rgba(255, 185, 104, 0.78);
+  display: block;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 4px;
+  color: var(--marker-color);
+  filter: drop-shadow(0 4px 9px rgba(0, 0, 0, 0.38));
+  pointer-events: none;
   user-select: none;
+}
+
+.marker-icon--spread {
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(255, 244, 224, 0.76);
+  border-radius: 999px;
+  background: var(--marker-color);
+}
+
+.marker-icon--cone path,
+.marker-icon--share path,
+.marker-icon--share circle {
+  fill: currentColor;
+  stroke: rgba(255, 244, 224, 0.76);
+  stroke-linejoin: round;
+  stroke-width: 1.5;
 }
 
 .tower-label {
@@ -260,15 +286,38 @@ input {
 }
 
 .boss-cast {
-  padding: 4px 12px;
+  width: 150px;
+  padding: 6px 8px 7px;
   border: 1px solid rgba(255, 120, 120, 0.7);
   border-radius: 6px;
   background: rgba(40, 8, 14, 0.85);
   color: #ffd0d0;
+  text-align: center;
+  user-select: none;
+}
+
+.boss-cast-name {
+  margin-bottom: 5px;
   font-size: 13px;
   font-weight: 800;
+  line-height: 1;
   white-space: nowrap;
-  user-select: none;
+}
+
+.boss-cast-bar {
+  height: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 208, 208, 0.42);
+  border-radius: 999px;
+  background: rgba(12, 8, 10, 0.72);
+}
+
+.boss-cast-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #ffb36b;
+  transform-origin: left center;
 }
 
 /* --- 기믹 컨트롤 패널 --- */
@@ -292,6 +341,7 @@ input {
 .gimmick-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -326,6 +376,7 @@ input {
 }
 .gimmick-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .gimmick-button.start { background: #51cf66; }
+.gimmick-button.fill-start { background: #ffd43b; }
 .gimmick-button.stop { background: #ff8787; }
 .gimmick-button.restart { background: #74c0fc; }
 
@@ -341,6 +392,24 @@ input {
 .gimmick-log { color: #cbd5e1; }
 .gimmick-log.is-fail { color: #ff8787; font-weight: 700; }
 .gimmick-log-empty { color: #64748b; font-style: italic; }
+
+.scenario-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+}
+
+.scenario-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(12, 16, 22, 0.86);
+  color: #e8edf2;
+  cursor: pointer;
+  font-weight: 800;
+}
 
 @media (max-width: 560px) {
   .join-panel {

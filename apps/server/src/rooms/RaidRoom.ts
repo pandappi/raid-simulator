@@ -5,6 +5,7 @@ import { RaidRoomState } from "../schemas/RaidRoomState.js";
 import { isClientInput, ROLE_INITIAL_POSITIONS, updatePlayerPosition } from "../utils/movement.js";
 import { validateJoinOptions } from "../utils/validateJoinOptions.js";
 import { GimmickController } from "../gimmick/GimmickController.js";
+import { BotController } from "../bots/BotController.js";
 
 const { Room } = colyseus;
 
@@ -13,11 +14,13 @@ const GIMMICK_TICK_MS = 50;
 
 export class RaidRoom extends Room<RaidRoomState> {
   private gimmick!: GimmickController;
+  private bots!: BotController;
 
   onCreate() {
     this.maxClients = 8;
     this.setState(new RaidRoomState());
     this.gimmick = new GimmickController(this.state);
+    this.bots = new BotController(this.state);
 
     // 명령 기반 이동: 각 입력 명령을 클라이언트가 보낸 dt 그대로 재현해
     // 서버 위치가 클라 예측과 결정론적으로 일치하도록 한다(재조정의 전제).
@@ -46,7 +49,10 @@ export class RaidRoom extends Room<RaidRoomState> {
       }
       const action = payload.action;
       const gimmick = typeof payload.gimmick === "string" ? payload.gimmick : "missing";
-      if (action === "start") {
+      if (action === "fillStart") {
+        this.bots.prepareForFillStart();
+        this.gimmick.start(gimmick, { scripted: true });
+      } else if (action === "start") {
         this.gimmick.start(gimmick);
       } else if (action === "stop") {
         this.gimmick.stop();
@@ -56,7 +62,10 @@ export class RaidRoom extends Room<RaidRoomState> {
     });
 
     // 기믹 타임라인 진행.
-    this.setSimulationInterval((dt) => this.gimmick.update(dt), GIMMICK_TICK_MS);
+    this.setSimulationInterval((dt) => {
+      this.bots.update(dt);
+      this.gimmick.update(dt);
+    }, GIMMICK_TICK_MS);
   }
 
   onAuth(_client: Client, options: unknown) {
@@ -66,6 +75,7 @@ export class RaidRoom extends Room<RaidRoomState> {
   onJoin(client: Client, options: unknown, auth?: JoinOptions) {
     const joinOptions = auth ?? validateJoinOptions(options, this.state);
     const initialPosition = ROLE_INITIAL_POSITIONS[joinOptions.role];
+    this.bots.removeBotForRole(joinOptions.role);
 
     const player = new PlayerSchema();
     player.id = client.sessionId;

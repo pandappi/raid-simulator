@@ -2,7 +2,7 @@
 // "행방불명" 기믹 1단계(탑 + 머리징) 구현용. 분신/발차기는 2단계.
 
 export type MarkerType = "share" | "spread" | "cone";
-export type BossCast = "" | "future" | "past";
+export type BossCast = "" | "missing" | "future" | "past";
 export type GimmickPhase = "idle" | "running" | "success" | "failed";
 export type GimmickId = "missing";
 
@@ -10,21 +10,22 @@ export type GimmickId = "missing";
 export const BOSS_RADIUS = 4; // 히트박스 반지름(지름 8m)
 
 // --- 탑 ---
-export const TOWER_RADIUS = 2.5; // 판정 반지름(지름 5m)
-export const TOWER_DISTANCE = 10; // 중심에서 탑까지 거리
+export const TOWER_RADIUS = 3; // 판정 반지름(지름 6m)
+export const TOWER_DISTANCE = 6; // 중심에서 탑까지 거리
 export const TOWER_ACTIVATE_MS = 8000; // 생성 후 작동까지
 export const TOWER_INTERVAL_MS = 10000; // 탑 등장 간격
 export const TOWER_ROUNDS = 8; // 총 반복 횟수
 export const TOWER_REQUIRED_OCCUPANTS = 2; // 탑당 정원
 
 // --- 머리징 공격 범위 ---
-export const SHARE_RADIUS = 3; // 쉐어 반지름(지름 6m), 정확히 3명
+export const SHARE_RADIUS = 3.4; // 쉐어 반지름(지름 6.8m), 정확히 3명
 export const SHARE_REQUIRED = 3;
 export const SPREAD_RADIUS = 2.5; // 산개 반지름(지름 5m), 혼자
 export const CONE_ANGLE = Math.PI / 2; // 부채꼴 90도
 export const CONE_RANGE = 20; // 부채꼴 사거리
 
 // --- 타이밍 ---
+export const MISSING_CAST_MS = 3000; // 기믹 시작 광역 캐스팅
 export const MARKER_VISIBLE_MS = 5000; // 머리징 표시 시간
 export const AOE_SHOW_MS = 1000; // 공격 범위 표시 시간
 export const BOSS_CAST_MS = 5000; // 미래/과거 캐스팅 시간

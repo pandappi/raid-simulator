@@ -1,7 +1,7 @@
 import { useSimulatorStore } from "../stores/simulatorStore";
 
 type GimmickPanelProps = {
-  onControl: (action: "start" | "stop" | "restart", gimmick?: string) => void;
+  onControl: (action: "start" | "fillStart" | "stop" | "restart", gimmick?: string) => void;
 };
 
 // 현재는 "행방불명" 한 종류. 추후 추가되면 목록에 넣는다.
@@ -38,6 +38,9 @@ export function GimmickPanel({ onControl }: GimmickPanelProps) {
       <div className="gimmick-row">
         <button className="gimmick-button start" onClick={() => onControl("start", selected)} disabled={running}>
           시작
+        </button>
+        <button className="gimmick-button fill-start" onClick={() => onControl("fillStart", selected)} disabled={running}>
+          봇 보충 시작
         </button>
         <button className="gimmick-button stop" onClick={() => onControl("stop")} disabled={gimmick.phase === "idle"}>
           중지

@@ -9,6 +9,7 @@ import { GimmickPanel } from "@/features/simulator/components/GimmickPanel";
 import { useKeyboardInput } from "@/features/simulator/hooks/useKeyboardInput";
 import { usePrediction } from "@/features/simulator/hooks/usePrediction";
 import { useRaidRoom } from "@/features/simulator/hooks/useRaidRoom";
+import { useScenarioPlayback } from "@/features/simulator/hooks/useScenarioPlayback";
 import { useSimulatorStore } from "@/features/simulator/stores/simulatorStore";
 
 const SimulatorCanvas = dynamic(
@@ -25,14 +26,19 @@ export default function Home() {
   const selfRole = useSimulatorStore((state) => state.selfRole);
   const players = useSimulatorStore((state) => state.players);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [scenarioMode, setScenarioMode] = useState(false);
+  const [scenarioPaused, setScenarioPaused] = useState(false);
 
   const isConnected = connectionStatus === "connected";
+  const isInSimulator = isConnected || scenarioMode;
   const playerCount = useMemo(() => Object.keys(players).length, [players]);
 
-  useKeyboardInput({ enabled: isConnected });
-  usePrediction({ enabled: isConnected, sendInput });
+  useScenarioPlayback(scenarioMode, scenarioPaused);
+  useKeyboardInput({ enabled: isConnected && !scenarioMode });
+  usePrediction({ enabled: isConnected && !scenarioMode, sendInput });
 
   async function handleJoin(name: string, role: PlayerRole) {
+    setScenarioMode(false);
     setJoinError(null);
     try {
       await join({ name, role });
@@ -41,13 +47,27 @@ export default function Home() {
     }
   }
 
-  if (!isConnected) {
+  function handleLeave() {
+    if (scenarioMode) {
+      setScenarioMode(false);
+      setScenarioPaused(false);
+      return;
+    }
+    leave();
+  }
+
+  if (!isInSimulator) {
     return (
       <main className="join-screen">
         <JoinPanel
           connectionStatus={connectionStatus}
           errorMessage={joinError ?? errorMessage}
           onJoin={handleJoin}
+          onScenarioStart={() => {
+            setJoinError(null);
+            setScenarioPaused(false);
+            setScenarioMode(true);
+          }}
         />
       </main>
     );
@@ -57,14 +77,21 @@ export default function Home() {
     <main className="simulator-screen">
       <SimulatorCanvas />
       <ConnectionOverlay
-        name={selfName}
+        name={scenarioMode ? "자동 공략" : selfName}
         role={selfRole}
-        sessionId={sessionId}
+        sessionId={scenarioMode ? "scenario" : sessionId}
         playerCount={playerCount}
-        status={connectionStatus}
-        onLeave={leave}
+        status={scenarioMode ? "auto" : connectionStatus}
+        onLeave={handleLeave}
       />
-      <GimmickPanel onControl={sendGimmick} />
+      {!scenarioMode && <GimmickPanel onControl={sendGimmick} />}
+      {scenarioMode && (
+        <div className="scenario-controls">
+          <button className="scenario-button" type="button" onClick={() => setScenarioPaused((value) => !value)}>
+            {scenarioPaused ? "재개" : "일시정지"}
+          </button>
+        </div>
+      )}
     </main>
   );
 }

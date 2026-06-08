@@ -5,9 +5,10 @@ type JoinPanelProps = {
   connectionStatus: string;
   errorMessage: string | null;
   onJoin: (name: string, role: PlayerRole) => Promise<void>;
+  onScenarioStart: () => void;
 };
 
-export function JoinPanel({ connectionStatus, errorMessage, onJoin }: JoinPanelProps) {
+export function JoinPanel({ connectionStatus, errorMessage, onJoin, onScenarioStart }: JoinPanelProps) {
   const [role, setRole] = useState<PlayerRole | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const isConnecting = connectionStatus === "connecting";
@@ -45,6 +46,10 @@ export function JoinPanel({ connectionStatus, errorMessage, onJoin }: JoinPanelP
 
       <button className="join-button" type="submit" disabled={isConnecting}>
         {isConnecting ? "Joining..." : "Join Room"}
+      </button>
+
+      <button className="guide-button" type="button" onClick={onScenarioStart} disabled={isConnecting}>
+        시작
       </button>
 
       {(localError || errorMessage) && <div className="error-message">{localError ?? errorMessage}</div>}

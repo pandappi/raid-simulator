@@ -1,16 +1,19 @@
 import { Html } from "@react-three/drei";
-import { BOSS_RADIUS } from "@raid-simulator/shared";
+import { BOSS_CAST_MS, BOSS_RADIUS, MISSING_CAST_MS, TOWER_INTERVAL_MS } from "@raid-simulator/shared";
 import { useSimulatorStore } from "../stores/simulatorStore";
 
 export function Boss() {
-  const bossActive = useSimulatorStore((state) => state.gimmick.bossActive);
-  const bossCast = useSimulatorStore((state) => state.gimmick.bossCast);
+  const { bossActive, bossCast, elapsed, round } = useSimulatorStore((state) => state.gimmick);
 
   if (!bossActive) {
     return null;
   }
 
-  const castLabel = bossCast === "future" ? "미래의 종언" : bossCast === "past" ? "과거의 종언" : null;
+  const castLabel =
+    bossCast === "missing" ? "행방불명" : bossCast === "future" ? "미래의 종언" : bossCast === "past" ? "과거의 종언" : null;
+  const castStart = bossCast === "missing" ? 0 : MISSING_CAST_MS + Math.max(0, (round - 1) * TOWER_INTERVAL_MS);
+  const castDuration = bossCast === "missing" ? MISSING_CAST_MS : BOSS_CAST_MS;
+  const castProgress = castLabel ? Math.min(1, Math.max(0, (elapsed - castStart) / castDuration)) : 0;
 
   return (
     <group>
@@ -26,7 +29,12 @@ export function Boss() {
       </mesh>
       {castLabel && (
         <Html position={[0, 4.2, 0]} center distanceFactor={26}>
-          <div className="boss-cast">{castLabel}</div>
+          <div className="boss-cast">
+            <div className="boss-cast-name">{castLabel}</div>
+            <div className="boss-cast-bar" aria-label="캐스팅 진행률">
+              <div className="boss-cast-fill" style={{ transform: `scaleX(${castProgress})` }} />
+            </div>
+          </div>
         </Html>
       )}
     </group>

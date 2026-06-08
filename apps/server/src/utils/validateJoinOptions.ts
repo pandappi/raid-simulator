@@ -1,5 +1,6 @@
 import { isPlayerRole, MAX_PLAYERS, type JoinOptions, type PlayerRole } from "@raid-simulator/shared";
 import type { RaidRoomState } from "../schemas/RaidRoomState.js";
+import { isBotId } from "../bots/BotController.js";
 
 const MAX_NAME_LENGTH = 20;
 
@@ -27,15 +28,16 @@ export function validateJoinOptions(options: unknown, state: RaidRoomState): Val
   // 이름은 선택값. 비워두면 역할명으로 식별한다.
   const name = rawName || role;
 
-  if (state.players.size >= MAX_PLAYERS) {
+  const humanCount = [...state.players.keys()].filter((id) => !isBotId(id)).length;
+  if (humanCount >= MAX_PLAYERS) {
     throw new Error("방이 가득 찼습니다.");
   }
 
-  for (const player of state.players.values()) {
-    if (player.role === role) {
+  state.players.forEach((player, id) => {
+    if (!isBotId(id) && player.role === role) {
       throw new Error("이미 선택된 역할입니다. 다른 역할을 선택해주세요.");
     }
-  }
+  });
 
   return { name, role } satisfies JoinOptions;
 }

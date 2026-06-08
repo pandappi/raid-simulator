@@ -1,5 +1,6 @@
 import {
   AOE_SHOW_MS,
+  ARENA_RADIUS,
   BOSS_CAST_MS,
   CONE_ANGLE,
   CONE_RANGE,
@@ -10,6 +11,7 @@ import {
   isInCone,
   MARKER_CAP,
   MARKER_VISIBLE_MS,
+  MISSING_CAST_MS,
   SHARE_RADIUS,
   SHARE_REQUIRED,
   SPREAD_RADIUS,
@@ -28,8 +30,32 @@ import { TowerSchema } from "../schemas/TowerSchema.js";
 import { AoeSchema } from "../schemas/AoeSchema.js";
 
 type ScheduledEvent = { at: number; fn: () => void; fired: boolean };
+type StartOptions = { scripted?: boolean };
 
 const MAX_LOGS = 50;
+const CLONE_BAIT_RADIUS = 2;
+const CLONE_SPOT_RADIUS = 0.42;
+const KICK_RANGE = 8;
+const KICK_ANGLE = Math.PI / 4;
+const KICK_BAIT_RESOLVE_DELAY_MS = 3200;
+const SCRIPTED_POST_ROUND_MARKERS: Record<number, Partial<Record<PlayerSchema["role"], MarkerType>>> = {
+  1: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
+  2: { MT: "share", H1: "spread", D2: "share", D4: "cone" },
+  3: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
+  4: { ST: "share", H2: "spread", D1: "share", D3: "cone" },
+  5: { ST: "cone", H2: "spread", D1: "cone", D3: "spread" },
+  6: { ST: "share", H2: "spread", D1: "share", D3: "cone" }
+};
+const SCRIPTED_INITIAL_MARKERS: Record<PlayerSchema["role"], MarkerType> = {
+  MT: "share",
+  ST: "spread",
+  H1: "spread",
+  H2: "spread",
+  D1: "cone",
+  D2: "share",
+  D3: "cone",
+  D4: "cone"
+};
 
 export class GimmickController {
   private running = false;
@@ -38,27 +64,30 @@ export class GimmickController {
   private failed = false;
   private baseIndex = 0;
   private rotDir = 1;
+  private scripted = false;
 
   constructor(private readonly state: RaidRoomState) {}
 
-  start(gimmick: string) {
+  start(gimmick: string, options: StartOptions = {}) {
     if (gimmick !== "missing") {
       return;
     }
     this.reset();
     this.running = true;
+    this.scripted = options.scripted === true;
     this.state.gimmick = "missing";
     this.state.gimmickPhase = "running";
     this.state.bossActive = true;
+    this.state.bossCast = "missing";
     this.state.elapsed = 0;
     this.failed = false;
 
-    // 첫 탑 방향(8방향 중)과 회전 방향을 시작 시 랜덤 결정.
-    this.baseIndex = Math.floor(Math.random() * DIRECTION_COUNT);
-    this.rotDir = Math.random() < 0.5 ? 1 : -1;
+    // 봇 보충 공략은 프론트 공략보기와 같은 방향/패턴을 사용한다.
+    this.baseIndex = this.scripted ? 3 : Math.floor(Math.random() * DIRECTION_COUNT);
+    this.rotDir = this.scripted ? 1 : Math.random() < 0.5 ? 1 : -1;
 
     this.buildTimeline();
-    this.log("기믹 시작: 광역 공격 + 1차 머리징 부여");
+    this.log("보스 캐스팅: 행방불명");
   }
 
   stop() {
@@ -97,6 +126,7 @@ export class GimmickController {
 
   private reset() {
     this.running = false;
+    this.scripted = false;
     this.schedule = [];
     this.idCounter = 0;
     this.state.towers.clear();
@@ -123,15 +153,19 @@ export class GimmickController {
   }
 
   private buildTimeline() {
-    // t=0: 광역 + 초기 머리징 + 1번 탑
-    this.scheduleAt(0, () => {
-      this.assignInitialMarkers();
+    this.scheduleAt(MISSING_CAST_MS, () => {
+      if (this.state.bossCast === "missing") {
+        this.state.bossCast = "";
+      }
+      this.addAoe(this.makeCircleAoe("raidwide", 0, 0, ARENA_RADIUS));
+      this.scripted ? this.assignScriptedMarkers(SCRIPTED_INITIAL_MARKERS, true) : this.assignInitialMarkers();
       this.spawnTowers(1);
+      this.log("광역 공격 완료 / 1차 머리징 부여");
     });
-    this.scheduleAt(MARKER_VISIBLE_MS, () => this.hideMarkers(this.allPlayerIds()));
+    this.scheduleAt(MISSING_CAST_MS + MARKER_VISIBLE_MS, () => this.hideMarkers(this.allPlayerIds()));
 
     for (let round = 1; round <= TOWER_ROUNDS; round++) {
-      const spawnAt = (round - 1) * TOWER_INTERVAL_MS;
+      const spawnAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS;
       const activateAt = spawnAt + TOWER_ACTIVATE_MS;
 
       if (round >= 2) {
@@ -139,13 +173,14 @@ export class GimmickController {
       }
       // 짝수 탑: 생성과 동시에 보스 미래/과거 캐스팅(5초).
       if (round % 2 === 0) {
-        this.scheduleAt(spawnAt, () => this.startBossCast());
+        this.scheduleAt(spawnAt, () => this.startBossCast(round));
+        this.scheduleAt(activateAt + AOE_SHOW_MS + KICK_BAIT_RESOLVE_DELAY_MS, () => this.showKickBaitAoes(round));
       }
       this.scheduleAt(activateAt, () => this.resolveRound(round));
     }
 
     // 마지막 탑 처리 후 종료 판정.
-    const endAt = (TOWER_ROUNDS - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS + 1500;
+    const endAt = MISSING_CAST_MS + (TOWER_ROUNDS - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS + 1500;
     this.scheduleAt(endAt, () => this.finish());
   }
 
@@ -165,6 +200,26 @@ export class GimmickController {
       p.markerVisible = false;
       p.markerCount = 0;
     });
+  }
+
+  private assignScriptedMarkers(markers: Partial<Record<PlayerSchema["role"], MarkerType>>, clearAll = false): string[] {
+    if (clearAll) {
+      this.clearAllMarkers();
+    }
+    if (Object.keys(markers).length === 0) {
+      return [];
+    }
+    const assignedIds: string[] = [];
+    this.state.players.forEach((player) => {
+      const marker = markers[player.role];
+      if (marker) {
+        player.marker = marker;
+        player.markerVisible = true;
+        assignedIds.push(player.id);
+      }
+    });
+    this.log("고정 공략 머리징 부여");
+    return assignedIds;
   }
 
   private giveMarker(p: PlayerSchema, marker: MarkerType) {
@@ -228,8 +283,8 @@ export class GimmickController {
     this.log(`${round}번 탑 등장 (8초 후 작동)`);
   }
 
-  private startBossCast() {
-    const cast = Math.random() < 0.5 ? "future" : "past";
+  private startBossCast(round: number) {
+    const cast = this.scripted ? getEvenRoundCast(round) : Math.random() < 0.5 ? "future" : "past";
     this.state.bossCast = cast;
     this.log(`보스 캐스팅: ${cast === "future" ? "미래의 종언" : "과거의 종언"}`);
     const castEndsAt = this.state.elapsed + BOSS_CAST_MS;
@@ -250,6 +305,21 @@ export class GimmickController {
         this.state.aoes.splice(index, 1);
       }
     });
+  }
+
+  private showKickBaitAoes(round: number) {
+    if (round % 2 !== 0) {
+      return;
+    }
+    const players = this.players()
+      .sort((a, b) => Math.hypot(a.p.x, a.p.z) - Math.hypot(b.p.x, b.p.z))
+      .slice(0, 4);
+    for (const entry of players) {
+      this.addAoe(this.makeCircleAoe("cloneSpot", entry.p.x, entry.p.z, CLONE_SPOT_RADIUS));
+      this.addAoe(this.makeCircleAoe("clone", entry.p.x, entry.p.z, CLONE_BAIT_RADIUS));
+      this.addAoe(this.makeConeAoe(entry.p.x, entry.p.z, Math.atan2(-entry.p.x, -entry.p.z), "kick"));
+    }
+    this.log(`${round}번 탑 이후 분신/발차기 유도 표시`);
   }
 
   private resolveRound(round: number) {
@@ -280,7 +350,13 @@ export class GimmickController {
     this.resolveMarkerAttacks(round, towerPlayers, all);
 
     // --- 머리징 재부여 ---
-    this.reassignMarkers(round, towerPlayers);
+    if (this.scripted) {
+      const nextMarkers = SCRIPTED_POST_ROUND_MARKERS[round] ?? {};
+      const reassignedIds = this.assignScriptedMarkers(nextMarkers);
+      this.scheduleAt(this.state.elapsed + MARKER_VISIBLE_MS, () => this.hideMarkers(reassignedIds));
+    } else {
+      this.reassignMarkers(round, towerPlayers);
+    }
 
     this.log(`${round}번 탑 작동 / 머리징 공격·재부여 완료`);
   }
@@ -339,7 +415,7 @@ export class GimmickController {
     }
   }
 
-  private makeCircleAoe(kind: "share" | "spread", x: number, z: number, radius: number): AoeSchema {
+  private makeCircleAoe(kind: "share" | "spread" | "raidwide" | "clone" | "cloneSpot", x: number, z: number, radius: number): AoeSchema {
     const aoe = new AoeSchema();
     aoe.id = this.nextId("aoe");
     aoe.kind = kind;
@@ -349,15 +425,15 @@ export class GimmickController {
     return aoe;
   }
 
-  private makeConeAoe(x: number, z: number, dir: number): AoeSchema {
+  private makeConeAoe(x: number, z: number, dir: number, kind: "cone" | "kick" = "cone"): AoeSchema {
     const aoe = new AoeSchema();
     aoe.id = this.nextId("aoe");
-    aoe.kind = "cone";
+    aoe.kind = kind;
     aoe.x = x;
     aoe.z = z;
     aoe.dir = dir;
-    aoe.angle = CONE_ANGLE;
-    aoe.range = CONE_RANGE;
+    aoe.angle = kind === "kick" ? KICK_ANGLE : CONE_ANGLE;
+    aoe.range = kind === "kick" ? KICK_RANGE : CONE_RANGE;
     return aoe;
   }
 
@@ -431,4 +507,8 @@ function nearestOther(
     }
   }
   return best;
+}
+
+function getEvenRoundCast(round: number): "future" | "past" {
+  return round % 4 === 0 ? "future" : "past";
 }

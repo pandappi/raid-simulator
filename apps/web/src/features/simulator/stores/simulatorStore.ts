@@ -18,6 +18,7 @@ export type GimmickView = {
   gimmick: string;
   phase: string;
   round: number;
+  elapsed: number;
   bossActive: boolean;
   bossCast: string;
   towers: TowerView[];
@@ -29,6 +30,7 @@ const initialGimmick: GimmickView = {
   gimmick: "",
   phase: "idle",
   round: 0,
+  elapsed: 0,
   bossActive: false,
   bossCast: "",
   towers: [],

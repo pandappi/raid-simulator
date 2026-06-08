@@ -144,7 +144,7 @@ export function useRaidRoom() {
     roomRef.current?.send("input", input);
   }, []);
 
-  const sendGimmick = useCallback((action: "start" | "stop" | "restart", gimmick = "missing") => {
+  const sendGimmick = useCallback((action: "start" | "fillStart" | "stop" | "restart", gimmick = "missing") => {
     roomRef.current?.send("gimmick", { action, gimmick });
   }, []);
 
@@ -197,6 +197,7 @@ function syncGimmick(state: unknown) {
     gimmick: typeof s.gimmick === "string" ? s.gimmick : "",
     phase: typeof s.gimmickPhase === "string" ? s.gimmickPhase : "idle",
     round: Number(s.round) || 0,
+    elapsed: Number(s.elapsed) || 0,
     bossActive: s.bossActive === true,
     bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
     towers,
