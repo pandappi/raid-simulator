@@ -2,8 +2,11 @@ import { Grid } from "@react-three/drei";
 import { ARENA_RADIUS } from "@raid-simulator/shared";
 import { useSimulatorStore } from "../stores/simulatorStore";
 import { Arena } from "./Arena";
+import { AoeIndicators } from "./AoeIndicators";
+import { Boss } from "./Boss";
 import { CameraControls } from "./CameraControls";
 import { PlayerCylinder } from "./PlayerCylinder";
+import { Towers } from "./Towers";
 import { Waymarks } from "./Waymarks";
 
 export function SimulatorScene() {
@@ -28,6 +31,9 @@ export function SimulatorScene() {
         fadeStrength={1}
         position={[0, 0.025, 0]}
       />
+      <Boss />
+      <Towers />
+      <AoeIndicators />
       {Object.values(players).map((player) => (
         <PlayerCylinder key={player.id} player={player} isSelf={player.id === sessionId} />
       ))}

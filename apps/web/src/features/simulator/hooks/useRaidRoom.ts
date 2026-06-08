@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { Client, type Room } from "colyseus.js";
 import { isPlayerRole, type ClientInput, type JoinOptions, type PlayerSnapshot } from "@raid-simulator/shared";
-import { useSimulatorStore } from "../stores/simulatorStore";
+import { useSimulatorStore, type AoeView, type TowerView } from "../stores/simulatorStore";
 import { dropPlayer, ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
 
 type RaidRoomStateLike = {
@@ -43,7 +43,9 @@ export function useRaidRoom() {
           x: player.x,
           z: player.z,
           rotation: player.rotation,
-          lastSeq
+          lastSeq,
+          marker: readMarker(player.marker),
+          markerVisible: player.markerVisible === true
         };
         ingestSnapshot(key, player.x, player.z, player.rotation, lastSeq);
       }
@@ -101,6 +103,11 @@ export function useRaidRoom() {
         }, true);
         room.state.players?.onChange?.((player, key) => upsertPlayer(player, key));
         room.state.players?.onRemove?.((_player, key) => removePlayer(key));
+
+        // 기믹 상태(보스/탑/공격범위/로그)는 패치마다 통째로 스냅샷해 store에 반영.
+        syncGimmick(room.state);
+        room.onStateChange((state) => syncGimmick(state));
+
         room.onLeave(() => {
           const latest = useSimulatorStore.getState();
           if (latest.connectionStatus === "connected") {
@@ -137,12 +144,65 @@ export function useRaidRoom() {
     roomRef.current?.send("input", input);
   }, []);
 
+  const sendGimmick = useCallback((action: "start" | "stop" | "restart", gimmick = "missing") => {
+    roomRef.current?.send("gimmick", { action, gimmick });
+  }, []);
+
   return {
     join,
     leave,
     sendInput,
+    sendGimmick,
     isConnected: useSimulatorStore((state) => state.connectionStatus === "connected")
   };
+}
+
+// 기믹 상태를 store가 쓰기 좋은 평범한 객체로 변환한다.
+function syncGimmick(state: unknown) {
+  const s = state as Record<string, unknown>;
+
+  const towers: TowerView[] = [];
+  const towerMap = s.towers as { forEach?: (cb: (value: Record<string, unknown>, key: string) => void) => void } | undefined;
+  towerMap?.forEach?.((tower, key) => {
+    towers.push({
+      id: typeof tower.id === "string" ? tower.id : key,
+      x: Number(tower.x) || 0,
+      z: Number(tower.z) || 0,
+      round: Number(tower.round) || 0
+    });
+  });
+
+  const aoes: AoeView[] = [];
+  const aoeArr = s.aoes as { forEach?: (cb: (value: Record<string, unknown>) => void) => void } | undefined;
+  aoeArr?.forEach?.((aoe) => {
+    aoes.push({
+      id: typeof aoe.id === "string" ? aoe.id : "",
+      kind: typeof aoe.kind === "string" ? aoe.kind : "",
+      x: Number(aoe.x) || 0,
+      z: Number(aoe.z) || 0,
+      radius: Number(aoe.radius) || 0,
+      dir: Number(aoe.dir) || 0,
+      angle: Number(aoe.angle) || 0,
+      range: Number(aoe.range) || 0
+    });
+  });
+
+  const logs: string[] = [];
+  const logArr = s.logs as { forEach?: (cb: (value: string) => void) => void } | undefined;
+  logArr?.forEach?.((entry) => {
+    if (typeof entry === "string") logs.push(entry);
+  });
+
+  useSimulatorStore.getState().setGimmick({
+    gimmick: typeof s.gimmick === "string" ? s.gimmick : "",
+    phase: typeof s.gimmickPhase === "string" ? s.gimmickPhase : "idle",
+    round: Number(s.round) || 0,
+    bossActive: s.bossActive === true,
+    bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
+    towers,
+    aoes,
+    logs
+  });
 }
 
 function toPlayerSnapshot(player: PlayerSchemaLike): PlayerSnapshot | null {
@@ -161,9 +221,15 @@ function toPlayerSnapshot(player: PlayerSchemaLike): PlayerSnapshot | null {
       x: player.x,
       z: player.z,
       rotation: player.rotation,
-      lastSeq: typeof player.lastSeq === "number" ? player.lastSeq : 0
+      lastSeq: typeof player.lastSeq === "number" ? player.lastSeq : 0,
+      marker: readMarker(player.marker),
+      markerVisible: player.markerVisible === true
     };
   }
 
   return null;
+}
+
+function readMarker(value: unknown): PlayerSnapshot["marker"] {
+  return value === "share" || value === "spread" || value === "cone" ? value : "";
 }

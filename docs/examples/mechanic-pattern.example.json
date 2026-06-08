@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-spread-stack-001",
+  "metadata": {
+    "title": "Sample Spread And Stack",
+    "description": "간단한 산개 후 힐러 쉐어 예시 패턴",
+    "author": "local",
+    "tags": ["spread", "stack", "aoe"],
+    "difficulty": "normal"
+  },
+  "setup": {
+    "arena": {
+      "type": "circle",
+      "radius": 20
+    },
+    "boss": {
+      "id": "boss",
+      "name": "Training Boss",
+      "position": { "x": 0, "z": 0 },
+      "facing": 0
+    },
+    "waymarks": "default",
+    "playerStart": {
+      "mode": "keep-current"
+    }
+  },
+  "timeline": [
+    {
+      "at": 0,
+      "type": "message",
+      "text": "기믹 시작: 산개 후 H1 쉐어"
+    },
+    {
+      "at": 1,
+      "type": "assign_markers",
+      "assignments": [
+        { "target": { "role": "MT" }, "marker": "spread" },
+        { "target": { "role": "ST" }, "marker": "spread" },
+        { "target": { "role": "H1" }, "marker": "stack" },
+        { "target": { "role": "H2" }, "marker": "spread" },
+        { "target": { "role": "D1" }, "marker": "spread" },
+        { "target": { "role": "D2" }, "marker": "spread" },
+        { "target": { "role": "D3" }, "marker": "spread" },
+        { "target": { "role": "D4" }, "marker": "spread" }
+      ]
+    },
+    {
+      "at": 2,
+      "type": "spawn_aoe",
+      "id": "center-danger",
+      "shape": "circle",
+      "position": { "x": 0, "z": 0 },
+      "radius": 5,
+      "color": "#ff4d4f",
+      "opacity": 0.35
+    },
+    {
+      "at": 5,
+      "type": "resolve_aoe",
+      "aoeId": "center-danger",
+      "hitRule": "players-inside-fail",
+      "required": true
+    },
+    {
+      "at": 5.2,
+      "type": "remove_aoe",
+      "aoeId": "center-danger"
+    },
+    {
+      "at": 6,
+      "type": "spread_check",
+      "id": "spread-check-1",
+      "required": true,
+      "targets": {
+        "roles": ["MT", "ST", "H2", "D1", "D2", "D3", "D4"]
+      },
+      "minDistance": 5
+    },
+    {
+      "at": 8,
+      "type": "stack_check",
+      "id": "h1-stack",
+      "required": true,
+      "center": {
+        "target": { "role": "H1" }
+      },
+      "radius": 4,
+      "minPlayers": 4,
+      "maxPlayers": 4
+    },
+    {
+      "at": 9,
+      "type": "clear_markers"
+    },
+    {
+      "at": 9.5,
+      "type": "message",
+      "text": "기믹 종료"
+    }
+  ],
+  "success": {
+    "mode": "all-required-checks-pass"
+  }
+}

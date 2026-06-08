@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { PlayerRole } from "@raid-simulator/shared";
 import { JoinPanel } from "@/features/simulator/components/JoinPanel";
 import { ConnectionOverlay } from "@/features/simulator/components/ConnectionOverlay";
+import { GimmickPanel } from "@/features/simulator/components/GimmickPanel";
 import { useKeyboardInput } from "@/features/simulator/hooks/useKeyboardInput";
 import { usePrediction } from "@/features/simulator/hooks/usePrediction";
 import { useRaidRoom } from "@/features/simulator/hooks/useRaidRoom";
@@ -16,7 +17,7 @@ const SimulatorCanvas = dynamic(
 );
 
 export default function Home() {
-  const { join, leave, sendInput } = useRaidRoom();
+  const { join, leave, sendInput, sendGimmick } = useRaidRoom();
   const connectionStatus = useSimulatorStore((state) => state.connectionStatus);
   const errorMessage = useSimulatorStore((state) => state.errorMessage);
   const sessionId = useSimulatorStore((state) => state.sessionId);
@@ -63,6 +64,7 @@ export default function Home() {
         status={connectionStatus}
         onLeave={leave}
       />
+      <GimmickPanel onControl={sendGimmick} />
     </main>
   );
 }

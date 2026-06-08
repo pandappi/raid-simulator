@@ -4,13 +4,20 @@ import { PlayerSchema } from "../schemas/PlayerSchema.js";
 import { RaidRoomState } from "../schemas/RaidRoomState.js";
 import { isClientInput, ROLE_INITIAL_POSITIONS, updatePlayerPosition } from "../utils/movement.js";
 import { validateJoinOptions } from "../utils/validateJoinOptions.js";
+import { GimmickController } from "../gimmick/GimmickController.js";
 
 const { Room } = colyseus;
 
+// 기믹 타임라인 진행용 틱 간격(ms). 이동은 명령 기반이라 이 틱은 시간 진행에만 쓴다.
+const GIMMICK_TICK_MS = 50;
+
 export class RaidRoom extends Room<RaidRoomState> {
+  private gimmick!: GimmickController;
+
   onCreate() {
     this.maxClients = 8;
     this.setState(new RaidRoomState());
+    this.gimmick = new GimmickController(this.state);
 
     // 명령 기반 이동: 각 입력 명령을 클라이언트가 보낸 dt 그대로 재현해
     // 서버 위치가 클라 예측과 결정론적으로 일치하도록 한다(재조정의 전제).
@@ -31,6 +38,25 @@ export class RaidRoom extends Room<RaidRoomState> {
         player.lastSeq = payload.seq;
       }
     });
+
+    // 기믹 제어: 누구나 시작/중지/재시작할 수 있다.
+    this.onMessage("gimmick", (_client, payload) => {
+      if (!isRecord(payload)) {
+        return;
+      }
+      const action = payload.action;
+      const gimmick = typeof payload.gimmick === "string" ? payload.gimmick : "missing";
+      if (action === "start") {
+        this.gimmick.start(gimmick);
+      } else if (action === "stop") {
+        this.gimmick.stop();
+      } else if (action === "restart") {
+        this.gimmick.restart(gimmick);
+      }
+    });
+
+    // 기믹 타임라인 진행.
+    this.setSimulationInterval((dt) => this.gimmick.update(dt), GIMMICK_TICK_MS);
   }
 
   onAuth(_client: Client, options: unknown) {
@@ -54,4 +80,8 @@ export class RaidRoom extends Room<RaidRoomState> {
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

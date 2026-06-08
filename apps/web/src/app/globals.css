@@ -232,6 +232,116 @@ input {
   user-select: none;
 }
 
+/* --- 기믹: 머리징/탑/보스 라벨 --- */
+.marker-chip {
+  margin: 0 auto 3px;
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #0b0e14;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+  box-shadow: 0 3px 9px rgba(0, 0, 0, 0.3);
+  user-select: none;
+}
+
+.tower-label {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(10, 30, 40, 0.78);
+  color: #c8f3ff;
+  font-size: 15px;
+  font-weight: 900;
+  user-select: none;
+}
+
+.boss-cast {
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 120, 120, 0.7);
+  border-radius: 6px;
+  background: rgba(40, 8, 14, 0.85);
+  color: #ffd0d0;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* --- 기믹 컨트롤 패널 --- */
+.gimmick-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(12, 16, 22, 0.82);
+  backdrop-filter: blur(6px);
+  color: #e8edf2;
+  z-index: 20;
+}
+
+.gimmick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gimmick-select {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8edf2;
+  font-weight: 700;
+}
+
+.gimmick-status {
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.gimmick-status--running { color: #ffd43b; }
+.gimmick-status--success { color: #51cf66; }
+.gimmick-status--failed { color: #ff6b6b; }
+.gimmick-status--idle { color: #94a3b8; }
+
+.gimmick-button {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #0b0e14;
+}
+.gimmick-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.gimmick-button.start { background: #51cf66; }
+.gimmick-button.stop { background: #ff8787; }
+.gimmick-button.restart { background: #74c0fc; }
+
+.gimmick-logs {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.gimmick-log { color: #cbd5e1; }
+.gimmick-log.is-fail { color: #ff8787; font-weight: 700; }
+.gimmick-log-empty { color: #64748b; font-style: italic; }
+
 @media (max-width: 560px) {
   .join-panel {
     padding: 22px;
@@ -239,5 +349,9 @@ input {
 
   .role-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gimmick-panel {
+    width: calc(100vw - 32px);
   }
 }
