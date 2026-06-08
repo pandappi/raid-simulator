@@ -31,7 +31,9 @@ export function isClientInput(value: unknown): value is ClientInput {
     typeof input.down === "boolean" &&
     typeof input.left === "boolean" &&
     typeof input.right === "boolean" &&
-    (input.cameraYaw === undefined || (typeof input.cameraYaw === "number" && Number.isFinite(input.cameraYaw)))
+    (input.cameraYaw === undefined || (typeof input.cameraYaw === "number" && Number.isFinite(input.cameraYaw))) &&
+    (input.seq === undefined || (typeof input.seq === "number" && Number.isFinite(input.seq))) &&
+    (input.dt === undefined || (typeof input.dt === "number" && Number.isFinite(input.dt)))
   );
 }
 

@@ -1,26 +1,30 @@
-import { stepMovement, type ClientInput, type MovementState } from "@raid-simulator/shared";
+import { CLIENT_SIM_DT, stepMovement, type ClientInput, type MovementState } from "@raid-simulator/shared";
 
 // 상대 플레이어를 과거 시점으로 렌더링해 부드러운 보간을 확보(ms).
-// 서버 패치 간격(50ms)보다 약간 크게 잡아 보간을 보장하되, 격차를 줄인다.
+// 서버 패치 간격(50ms)보다 약간 크게 잡아 보간을 보장하되 격차를 줄인다.
 const INTERP_DELAY = 70;
 // 스냅샷이 끊겼을 때 속도로 외삽할 수 있는 최대 시간(ms).
 const MAX_EXTRAP = 120;
 // 스냅샷 버퍼 보관 시간(ms).
 const BUFFER_MS = 1000;
-// 멈춰 있을 때 예측 위치를 서버 권위 위치로 정렬하는 강도.
-const RECONCILE_LAMBDA = 8;
-// 이 거리 이상 어긋나면(텔레포트/디싱크) 즉시 스냅(m).
-const SNAP_THRESHOLD = 2;
+// 한 프레임에서 처리할 최대 시뮬레이션 스텝 수(탭 비활성 후 폭주 방지).
+const MAX_STEPS_PER_FRAME = 5;
 
 type Snap = { t: number; x: number; z: number; rotation: number };
+type PendingInput = { seq: number; input: ClientInput };
 
 const buffers = new Map<string, Snap[]>();
 let selfId: string | null = null;
-let selfPredicted: MovementState | null = null;
-let selfServer: MovementState | null = null;
-// 서버 권위 위치가 아직 움직이는 중인지(정지 입력을 처리하기 전인지) 추적.
-let selfServerMoving = false;
 
+// 클라이언트 예측의 논리 상태(정확값). 렌더링은 이 값을 부드럽게 따라간다.
+let selfPredicted: MovementState | null = null;
+// 아직 서버가 처리하지 않은(미확인) 입력들. 재조정 시 재적용한다.
+let pending: PendingInput[] = [];
+let seqCounter = 0;
+let accumulator = 0;
+let wasMoving = false;
+
+// 키보드에서 갱신하는 현재 보유 입력.
 const moveInput: ClientInput = {
   up: false,
   down: false,
@@ -47,8 +51,10 @@ export function setMoveInput(input: { up: boolean; down: boolean; left: boolean;
 export function resetNetcode() {
   buffers.clear();
   selfPredicted = null;
-  selfServer = null;
-  selfServerMoving = false;
+  pending = [];
+  seqCounter = 0;
+  accumulator = 0;
+  wasMoving = false;
   selfId = null;
   moveInput.up = moveInput.down = moveInput.left = moveInput.right = false;
 }
@@ -57,8 +63,65 @@ export function dropPlayer(id: string) {
   buffers.delete(id);
 }
 
-/** 서버에서 도착한 위치 스냅샷을 버퍼에 적재한다. */
-export function ingestSnapshot(id: string, x: number, z: number, rotation: number) {
+/**
+ * 고정 스텝으로 예측을 진행하며 각 스텝마다 순번이 매겨진 입력 명령을 서버로 보낸다.
+ * - 이동 중에는 매 스텝 명령을 전송(서버가 동일 dt로 재현 → 결정론적 일치).
+ * - 정지하면 "정지" 명령 한 번만 보내고 유휴 트래픽은 생성하지 않는다.
+ * frameDt: 직전 프레임과의 시간 간격(초). send: 서버로 명령을 보내는 콜백.
+ */
+export function advance(frameDt: number, cameraYaw: number, send: (input: ClientInput) => void) {
+  if (!selfPredicted) {
+    return;
+  }
+
+  const moving = moveInput.up || moveInput.down || moveInput.left || moveInput.right;
+  if (!moving && !wasMoving) {
+    // 완전 유휴: 누적 시간을 비워 재개 시 폭주를 막는다.
+    accumulator = 0;
+    return;
+  }
+
+  accumulator += Math.min(frameDt, MAX_STEPS_PER_FRAME * CLIENT_SIM_DT);
+
+  let steps = 0;
+  while (accumulator >= CLIENT_SIM_DT && steps < MAX_STEPS_PER_FRAME) {
+    const command: ClientInput = {
+      up: moveInput.up,
+      down: moveInput.down,
+      left: moveInput.left,
+      right: moveInput.right,
+      cameraYaw,
+      seq: ++seqCounter,
+      dt: CLIENT_SIM_DT
+    };
+
+    selfPredicted = stepMovement(selfPredicted, command, CLIENT_SIM_DT);
+    pending.push({ seq: command.seq as number, input: command });
+    send(command);
+
+    accumulator -= CLIENT_SIM_DT;
+    steps += 1;
+  }
+
+  // 폭주 방지로 남은 누적 시간은 버린다.
+  if (steps >= MAX_STEPS_PER_FRAME) {
+    accumulator = 0;
+  }
+
+  wasMoving = moving;
+}
+
+/** 자기 캐릭터의 현재 예측 위치(렌더링용). */
+export function getSelfState(): MovementState | null {
+  return selfPredicted;
+}
+
+/**
+ * 서버 권위 스냅샷을 버퍼에 적재한다.
+ * 자기 자신이면 Gambetta 방식으로 재조정: 권위 위치로 맞춘 뒤
+ * 서버가 아직 처리하지 않은(미확인) 입력만 다시 적용한다 → 롤백 없음.
+ */
+export function ingestSnapshot(id: string, x: number, z: number, rotation: number, lastSeq = 0) {
   const t = now();
   let buf = buffers.get(id);
   if (!buf) {
@@ -73,49 +136,21 @@ export function ingestSnapshot(id: string, x: number, z: number, rotation: numbe
   }
 
   if (id === selfId) {
-    if (selfServer) {
-      const moved = Math.hypot(x - selfServer.x, z - selfServer.z);
-      selfServerMoving = moved > 0.02;
-    }
-    selfServer = { x, z, rotation };
     if (!selfPredicted) {
       selfPredicted = { x, z, rotation };
+      return;
     }
-  }
-}
 
-/**
- * 자기 캐릭터: 보유 중인 입력으로 즉시 예측 이동 후, 서버 권위 위치로 부드럽게 보정.
- */
-export function stepSelf(dt: number, cameraYaw: number): MovementState | null {
-  if (!selfPredicted) {
-    return selfServer;
-  }
-
-  moveInput.cameraYaw = cameraYaw;
-  const next = stepMovement(selfPredicted, moveInput, dt);
-
-  if (selfServer) {
-    const errX = selfServer.x - next.x;
-    const errZ = selfServer.z - next.z;
-    const dist = Math.hypot(errX, errZ);
-    const moving = moveInput.up || moveInput.down || moveInput.left || moveInput.right;
-
-    if (dist > SNAP_THRESHOLD) {
-      // 큰 디싱크: 즉시 권위 위치로 맞춘다.
-      next.x = selfServer.x;
-      next.z = selfServer.z;
-    } else if (!moving && !selfServerMoving) {
-      // 나도 멈췄고 서버도 정지 입력을 처리해 멈춘 뒤에만 잔여 오차를 정렬한다.
-      // 서버가 아직 따라오는 중에 당기면 멈출 때 뒤로 끌렸다 오는 현상이 생긴다.
-      const k = 1 - Math.exp(-RECONCILE_LAMBDA * dt);
-      next.x += errX * k;
-      next.z += errZ * k;
+    // 1) 권위 상태에서 시작
+    let reconciled: MovementState = { x, z, rotation };
+    // 2) 서버가 이미 처리한 입력은 버린다
+    pending = pending.filter((entry) => entry.seq > lastSeq);
+    // 3) 미확인 입력을 순서대로 재적용해 '현재' 예측 위치를 복원
+    for (const entry of pending) {
+      reconciled = stepMovement(reconciled, entry.input, entry.input.dt ?? CLIENT_SIM_DT);
     }
+    selfPredicted = reconciled;
   }
-
-  selfPredicted = next;
-  return next;
 }
 
 /**

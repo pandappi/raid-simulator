@@ -6,6 +6,7 @@ import type { PlayerRole } from "@raid-simulator/shared";
 import { JoinPanel } from "@/features/simulator/components/JoinPanel";
 import { ConnectionOverlay } from "@/features/simulator/components/ConnectionOverlay";
 import { useKeyboardInput } from "@/features/simulator/hooks/useKeyboardInput";
+import { usePrediction } from "@/features/simulator/hooks/usePrediction";
 import { useRaidRoom } from "@/features/simulator/hooks/useRaidRoom";
 import { useSimulatorStore } from "@/features/simulator/stores/simulatorStore";
 
@@ -27,10 +28,8 @@ export default function Home() {
   const isConnected = connectionStatus === "connected";
   const playerCount = useMemo(() => Object.keys(players).length, [players]);
 
-  useKeyboardInput({
-    enabled: isConnected,
-    sendInput
-  });
+  useKeyboardInput({ enabled: isConnected });
+  usePrediction({ enabled: isConnected, sendInput });
 
   async function handleJoin(name: string, role: PlayerRole) {
     setJoinError(null);

@@ -35,15 +35,17 @@ export function useRaidRoom() {
         typeof player.z === "number" &&
         typeof player.rotation === "number"
       ) {
+        const lastSeq = typeof player.lastSeq === "number" ? player.lastSeq : 0;
         nextPlayers[key] = {
           id: player.id,
           name: player.name,
           role: player.role,
           x: player.x,
           z: player.z,
-          rotation: player.rotation
+          rotation: player.rotation,
+          lastSeq
         };
-        ingestSnapshot(key, player.x, player.z, player.rotation);
+        ingestSnapshot(key, player.x, player.z, player.rotation, lastSeq);
       }
     });
 
@@ -56,7 +58,7 @@ export function useRaidRoom() {
       return;
     }
 
-    ingestSnapshot(key, snapshot.x, snapshot.z, snapshot.rotation);
+    ingestSnapshot(key, snapshot.x, snapshot.z, snapshot.rotation, snapshot.lastSeq);
 
     const currentPlayers = useSimulatorStore.getState().players;
     useSimulatorStore.getState().setPlayers({
@@ -158,7 +160,8 @@ function toPlayerSnapshot(player: PlayerSchemaLike): PlayerSnapshot | null {
       role: player.role,
       x: player.x,
       z: player.z,
-      rotation: player.rotation
+      rotation: player.rotation,
+      lastSeq: typeof player.lastSeq === "number" ? player.lastSeq : 0
     };
   }
 
