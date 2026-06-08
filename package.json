@@ -1,0 +1,13 @@
+{
+  "name": "raid-simulator",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "pnpm --filter @raid-simulator/shared build && pnpm -r --parallel --filter './apps/*' dev",
+    "dev:web": "pnpm --filter @raid-simulator/shared build && pnpm --filter web dev",
+    "dev:server": "pnpm --filter @raid-simulator/shared build && pnpm --filter server dev",
+    "build": "pnpm --filter @raid-simulator/shared build && pnpm -r --filter './apps/*' build",
+    "typecheck": "pnpm --filter @raid-simulator/shared build && pnpm -r --filter './apps/*' typecheck && pnpm --filter @raid-simulator/shared typecheck"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
