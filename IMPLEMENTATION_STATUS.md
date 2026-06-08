@@ -2,7 +2,7 @@
 
 이 문서는 다음 작업자 또는 AI agent가 현재 프로젝트 상태를 빠르게 이어받기 위한 개발 인수인계 문서다.
 
-> 변경 이력은 [`CHANGELOG.md`](CHANGELOG.md), 실시간 이동 동기화(예측/재조정) 설계는 [`docs/NETCODE.md`](docs/NETCODE.md) 참고. 변경 작업 시 `CHANGELOG.md`를 함께 갱신할 것.
+> 변경 이력은 [`CHANGELOG.md`](CHANGELOG.md), 실시간 이동 동기화(예측/재조정) 설계는 [`docs/NETCODE.md`](docs/NETCODE.md), 그동안 겪은 동기화 이슈 회고는 [`docs/REALTIME_RETROSPECTIVE.md`](docs/REALTIME_RETROSPECTIVE.md) 참고. 변경 작업 시 `CHANGELOG.md`를 함께 갱신할 것.
 
 ## 현재 상태 요약
 
