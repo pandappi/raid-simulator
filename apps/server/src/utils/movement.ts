@@ -1,10 +1,4 @@
-import {
-  ARENA_RADIUS,
-  PLAYER_MOVE_SPEED,
-  type ClientInput,
-  type PlayerRole,
-  type Vector2Like
-} from "@raid-simulator/shared";
+import { stepMovement, type ClientInput, type PlayerRole, type Vector2Like } from "@raid-simulator/shared";
 import type { PlayerSchema } from "../schemas/PlayerSchema.js";
 
 export const EMPTY_INPUT: ClientInput = {
@@ -26,8 +20,6 @@ export const ROLE_INITIAL_POSITIONS: Record<PlayerRole, Vector2Like> = {
   D4: { x: 8, z: 6 }
 };
 
-const MOVEMENT_RADIUS = ARENA_RADIUS - 0.8;
-
 export function isClientInput(value: unknown): value is ClientInput {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -44,44 +36,8 @@ export function isClientInput(value: unknown): value is ClientInput {
 }
 
 export function updatePlayerPosition(player: PlayerSchema, input: ClientInput, deltaSeconds: number) {
-  let strafe = 0;
-  let forwardAmount = 0;
-
-  if (input.up) forwardAmount += 1;
-  if (input.down) forwardAmount -= 1;
-  if (input.left) strafe -= 1;
-  if (input.right) strafe += 1;
-
-  let dx = 0;
-  let dz = 0;
-
-  if (typeof input.cameraYaw === "number") {
-    const forwardX = Math.sin(input.cameraYaw);
-    const forwardZ = Math.cos(input.cameraYaw);
-    const rightX = -forwardZ;
-    const rightZ = forwardX;
-
-    dx = forwardX * forwardAmount + rightX * strafe;
-    dz = forwardZ * forwardAmount + rightZ * strafe;
-  } else {
-    dx = strafe;
-    dz = -forwardAmount;
-  }
-
-  const length = Math.hypot(dx, dz);
-  if (length > 0) {
-    dx /= length;
-    dz /= length;
-
-    player.x += dx * PLAYER_MOVE_SPEED * deltaSeconds;
-    player.z += dz * PLAYER_MOVE_SPEED * deltaSeconds;
-    player.rotation = Math.atan2(dx, dz);
-  }
-
-  const distance = Math.hypot(player.x, player.z);
-  if (distance > MOVEMENT_RADIUS) {
-    const ratio = MOVEMENT_RADIUS / distance;
-    player.x *= ratio;
-    player.z *= ratio;
-  }
+  const next = stepMovement({ x: player.x, z: player.z, rotation: player.rotation }, input, deltaSeconds);
+  player.x = next.x;
+  player.z = next.z;
+  player.rotation = next.rotation;
 }

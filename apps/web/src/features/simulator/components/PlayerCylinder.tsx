@@ -4,6 +4,8 @@ import { Group, MathUtils } from "three";
 import type { PlayerSnapshot } from "@raid-simulator/shared";
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from "@raid-simulator/shared";
 import { getPlayerColor } from "../utils/playerColor";
+import { sampleRemote, stepSelf } from "../netcode";
+import { useSimulatorStore } from "../stores/simulatorStore";
 import { PlayerLabel } from "./PlayerLabel";
 
 type PlayerCylinderProps = {
@@ -22,16 +24,33 @@ export function PlayerCylinder({ player, isSelf }: PlayerCylinderProps) {
       return;
     }
 
+    // 자기 캐릭터는 로컬 예측(즉시 반응), 상대는 보간/외삽으로 부드럽게.
+    const target = isSelf
+      ? stepSelf(delta, useSimulatorStore.getState().cameraYaw)
+      : sampleRemote(player.id);
+
+    if (!target) {
+      return;
+    }
+
     if (!initializedRef.current) {
-      group.position.set(player.x, 0, player.z);
-      group.rotation.y = player.rotation;
+      group.position.set(target.x, 0, target.z);
+      group.rotation.y = target.rotation;
       initializedRef.current = true;
       return;
     }
 
-    group.position.x = MathUtils.damp(group.position.x, player.x, 18, delta);
-    group.position.z = MathUtils.damp(group.position.z, player.z, 18, delta);
-    group.rotation.y = dampAngle(group.rotation.y, player.rotation, 18, delta);
+    if (isSelf) {
+      // 예측 위치를 그대로 반영해 입력 지연을 없앤다.
+      group.position.x = target.x;
+      group.position.z = target.z;
+      group.rotation.y = dampAngle(group.rotation.y, target.rotation, 24, delta);
+    } else {
+      // 보간 결과에 약한 댐핑만 더해 잔여 떨림을 잡는다.
+      group.position.x = MathUtils.damp(group.position.x, target.x, 24, delta);
+      group.position.z = MathUtils.damp(group.position.z, target.z, 24, delta);
+      group.rotation.y = dampAngle(group.rotation.y, target.rotation, 18, delta);
+    }
   });
 
   return (

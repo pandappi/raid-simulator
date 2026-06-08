@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { Client, type Room } from "colyseus.js";
 import { isPlayerRole, type ClientInput, type JoinOptions, type PlayerSnapshot } from "@raid-simulator/shared";
 import { useSimulatorStore } from "../stores/simulatorStore";
+import { dropPlayer, ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
 
 type RaidRoomStateLike = {
   players?: {
@@ -42,6 +43,7 @@ export function useRaidRoom() {
           z: player.z,
           rotation: player.rotation
         };
+        ingestSnapshot(key, player.x, player.z, player.rotation);
       }
     });
 
@@ -54,6 +56,8 @@ export function useRaidRoom() {
       return;
     }
 
+    ingestSnapshot(key, snapshot.x, snapshot.z, snapshot.rotation);
+
     const currentPlayers = useSimulatorStore.getState().players;
     useSimulatorStore.getState().setPlayers({
       ...currentPlayers,
@@ -62,6 +66,7 @@ export function useRaidRoom() {
   }, []);
 
   const removePlayer = useCallback((key: string) => {
+    dropPlayer(key);
     const currentPlayers = useSimulatorStore.getState().players;
     const nextPlayers = { ...currentPlayers };
     delete nextPlayers[key];
@@ -76,11 +81,13 @@ export function useRaidRoom() {
 
       try {
         await roomRef.current?.leave();
+        resetNetcode();
 
         const client = new Client(SERVER_URL);
         const room = await client.joinOrCreate<RaidRoomStateLike>("raid_room", { name, role });
         roomRef.current = room;
 
+        setSelfId(room.sessionId);
         store.setSessionId(room.sessionId);
         store.setSelf(name, role);
         store.setConnectionStatus("connected");
@@ -95,6 +102,7 @@ export function useRaidRoom() {
         room.onLeave(() => {
           const latest = useSimulatorStore.getState();
           if (latest.connectionStatus === "connected") {
+            resetNetcode();
             latest.reset();
           }
         });
@@ -119,6 +127,7 @@ export function useRaidRoom() {
     const room = roomRef.current;
     roomRef.current = null;
     await room?.leave();
+    resetNetcode();
     useSimulatorStore.getState().reset();
   }, []);
 

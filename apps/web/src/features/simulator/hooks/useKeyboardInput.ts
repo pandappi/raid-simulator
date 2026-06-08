@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { SERVER_TICK_MS, type ClientInput } from "@raid-simulator/shared";
 import { useSimulatorStore } from "../stores/simulatorStore";
+import { setMoveInput } from "../netcode";
 
 type UseKeyboardInputParams = {
   enabled: boolean;
@@ -63,6 +64,8 @@ export function useKeyboardInput({ enabled, sendInput }: UseKeyboardInputParams)
         ...inputRef.current,
         [key]: value
       };
+      // 클라이언트 예측이 매 프레임 즉시 읽을 수 있도록 보유 입력을 공유한다.
+      setMoveInput(inputRef.current);
     }
 
     const handleKeyDown = (event: KeyboardEvent) => handleKey(event, true);
@@ -82,6 +85,7 @@ export function useKeyboardInput({ enabled, sendInput }: UseKeyboardInputParams)
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       inputRef.current = { up: false, down: false, left: false, right: false };
+      setMoveInput(inputRef.current);
       sendInput(inputRef.current);
     };
   }, [enabled, sendInput]);
