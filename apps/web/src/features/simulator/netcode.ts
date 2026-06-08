@@ -17,6 +17,8 @@ const buffers = new Map<string, Snap[]>();
 let selfId: string | null = null;
 let selfPredicted: MovementState | null = null;
 let selfServer: MovementState | null = null;
+// 서버 권위 위치가 아직 움직이는 중인지(정지 입력을 처리하기 전인지) 추적.
+let selfServerMoving = false;
 
 const moveInput: ClientInput = {
   up: false,
@@ -45,6 +47,7 @@ export function resetNetcode() {
   buffers.clear();
   selfPredicted = null;
   selfServer = null;
+  selfServerMoving = false;
   selfId = null;
   moveInput.up = moveInput.down = moveInput.left = moveInput.right = false;
 }
@@ -69,6 +72,10 @@ export function ingestSnapshot(id: string, x: number, z: number, rotation: numbe
   }
 
   if (id === selfId) {
+    if (selfServer) {
+      const moved = Math.hypot(x - selfServer.x, z - selfServer.z);
+      selfServerMoving = moved > 0.02;
+    }
     selfServer = { x, z, rotation };
     if (!selfPredicted) {
       selfPredicted = { x, z, rotation };
@@ -97,9 +104,9 @@ export function stepSelf(dt: number, cameraYaw: number): MovementState | null {
       // 큰 디싱크: 즉시 권위 위치로 맞춘다.
       next.x = selfServer.x;
       next.z = selfServer.z;
-    } else if (!moving) {
-      // 움직일 땐 예측을 신뢰하고, 멈췄을 때만 서버 위치로 부드럽게 정렬해
-      // 지연된 서버 위치로 끌려가며 생기는 "따닥" 현상을 막는다.
+    } else if (!moving && !selfServerMoving) {
+      // 나도 멈췄고 서버도 정지 입력을 처리해 멈춘 뒤에만 잔여 오차를 정렬한다.
+      // 서버가 아직 따라오는 중에 당기면 멈출 때 뒤로 끌렸다 오는 현상이 생긴다.
       const k = 1 - Math.exp(-RECONCILE_LAMBDA * dt);
       next.x += errX * k;
       next.z += errZ * k;

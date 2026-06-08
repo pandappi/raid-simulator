@@ -45,8 +45,9 @@ export function Waymarks() {
 
       {SQUARE_WAYMARKS.map((waymark) => (
         <group key={waymark.label} position={waymark.position}>
+          {/* 채움과 테두리 모두 4분할 도형 + 동일 회전 → 같은 방향의 정사각형 */}
           <mesh rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
-            <planeGeometry args={[2.25, 2.25]} />
+            <circleGeometry args={[1.6, 4]} />
             <meshBasicMaterial color={waymark.color} opacity={0.42} transparent depthWrite={false} />
           </mesh>
           <mesh rotation={[-Math.PI / 2, 0, Math.PI / 4]} position={[0, 0.006, 0]}>
