@@ -18,10 +18,10 @@ pnpm dev:web
 
 기본 주소:
 
-- Web: http://localhost:3000
+- Web: http://localhost:3100
 - Server: ws://localhost:2567
 
-`3000` 포트가 이미 사용 중이면 Next.js가 `3001` 같은 사용 가능한 포트로 자동 전환합니다.
+웹 개발 서버는 `3000` 충돌을 피하기 위해 `3100` 포트로 고정되어 있습니다.
 
 웹 클라이언트는 기본적으로 `ws://localhost:2567`에 접속합니다. 서버 주소를 바꾸려면 `apps/web/.env.local`에 다음 값을 설정하세요.
 

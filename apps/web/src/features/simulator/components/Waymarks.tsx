@@ -8,16 +8,17 @@ type CircleWaymark = {
 
 type SquareWaymark = CircleWaymark;
 
+const WAYMARK_DISTANCE = 13;
+
 const CIRCLE_WAYMARKS: CircleWaymark[] = [
-  { label: "A", color: "#ff4d4f", position: [0, 0.085, -10] },
-  { label: "B", color: "#ffd43b", position: [10, 0.085, 0] },
-  { label: "C", color: "#339af0", position: [0, 0.085, 10] },
-  { label: "D", color: "#9c6ade", position: [-10, 0.085, 0] }
+  { label: "A", color: "#ff4d4f", position: [0, 0.085, -WAYMARK_DISTANCE] },
+  { label: "B", color: "#ffd43b", position: [WAYMARK_DISTANCE, 0.085, 0] },
+  { label: "C", color: "#339af0", position: [0, 0.085, WAYMARK_DISTANCE] },
+  { label: "D", color: "#9c6ade", position: [-WAYMARK_DISTANCE, 0.085, 0] }
 ];
 
-// 중앙에서 15m 떨어진 대각선 지점 (각 축 = 15 / √2).
-const SQUARE_DISTANCE = 15;
-const SQUARE_AXIS = SQUARE_DISTANCE * Math.SQRT1_2;
+// 중앙에서 13m 떨어진 대각선 지점 (각 축 = 13 / √2).
+const SQUARE_AXIS = WAYMARK_DISTANCE * Math.SQRT1_2;
 
 const SQUARE_WAYMARKS: SquareWaymark[] = [
   { label: "1", color: "#ff4d4f", position: [-SQUARE_AXIS, 0.09, -SQUARE_AXIS] },

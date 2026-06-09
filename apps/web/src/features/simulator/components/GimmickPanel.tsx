@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { useSimulatorStore } from "../stores/simulatorStore";
 
 type GimmickPanelProps = {
-  onControl: (action: "start" | "fillStart" | "stop" | "restart", gimmick?: string) => void;
+  onControl: (
+    action: "practiceStart" | "stop" | "pause" | "resume",
+    gimmick?: string,
+    options?: { stopOnFailure?: boolean }
+  ) => void;
 };
 
 // 현재는 "행방불명" 한 종류. 추후 추가되면 목록에 넣는다.
@@ -15,9 +20,11 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export function GimmickPanel({ onControl }: GimmickPanelProps) {
+  const [stopOnFailure, setStopOnFailure] = useState(true);
   const gimmick = useSimulatorStore((state) => state.gimmick);
   const selected = GIMMICKS[0]?.id ?? "missing";
   const running = gimmick.phase === "running";
+  const paused = gimmick.paused;
 
   return (
     <div className="gimmick-panel">
@@ -32,27 +39,34 @@ export function GimmickPanel({ onControl }: GimmickPanelProps) {
         <span className={`gimmick-status gimmick-status--${gimmick.phase}`}>
           {PHASE_LABEL[gimmick.phase] ?? gimmick.phase}
           {gimmick.round > 0 ? ` · ${gimmick.round}번 탑` : ""}
+          {paused ? " · 일시정지" : ""}
         </span>
       </div>
 
+      <label className="gimmick-option">
+        <input type="checkbox" checked={stopOnFailure} onChange={(event) => setStopOnFailure(event.target.checked)} />
+        실패시 중단
+      </label>
+
       <div className="gimmick-row">
-        <button className="gimmick-button start" onClick={() => onControl("start", selected)} disabled={running}>
+        <button
+          className="gimmick-button start"
+          onClick={() => onControl("practiceStart", selected, { stopOnFailure })}
+          disabled={running}
+        >
           시작
         </button>
-        <button className="gimmick-button fill-start" onClick={() => onControl("fillStart", selected)} disabled={running}>
-          봇 보충 시작
+        <button className="gimmick-button pause" onClick={() => onControl(paused ? "resume" : "pause")} disabled={!running}>
+          {paused ? "재개" : "일시정지"}
         </button>
         <button className="gimmick-button stop" onClick={() => onControl("stop")} disabled={gimmick.phase === "idle"}>
-          중지
-        </button>
-        <button className="gimmick-button restart" onClick={() => onControl("restart", selected)}>
-          재시작
+          중단
         </button>
       </div>
 
       <div className="gimmick-logs">
         {gimmick.logs.length === 0 ? (
-          <div className="gimmick-log-empty">로그 없음 — 시작을 눌러보세요.</div>
+          <div className="gimmick-log-empty">로그 없음 - 시작을 눌러보세요.</div>
         ) : (
           gimmick.logs
             .slice(-12)

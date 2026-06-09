@@ -124,6 +124,15 @@ input {
   color: #064a45;
 }
 
+.role-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.role-button.occupied {
+  text-decoration: line-through;
+}
+
 .join-button {
   width: 100%;
   background: var(--accent);
@@ -365,6 +374,22 @@ input {
 .gimmick-status--failed { color: #ff6b6b; }
 .gimmick-status--idle { color: #94a3b8; }
 
+.gimmick-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d8e0e8;
+}
+
+.gimmick-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: #ffd43b;
+}
+
 .gimmick-button {
   flex: 1;
   padding: 8px 0;
@@ -376,9 +401,9 @@ input {
 }
 .gimmick-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .gimmick-button.start { background: #51cf66; }
-.gimmick-button.fill-start { background: #ffd43b; }
+.gimmick-button.practice-start { background: #ffd43b; }
+.gimmick-button.pause { background: #ffd43b; }
 .gimmick-button.stop { background: #ff8787; }
-.gimmick-button.restart { background: #74c0fc; }
 
 .gimmick-logs {
   max-height: 200px;
@@ -409,6 +434,10 @@ input {
   color: #e8edf2;
   cursor: pointer;
   font-weight: 800;
+}
+
+.scenario-panel .scenario-button {
+  width: 100%;
 }
 
 @media (max-width: 560px) {

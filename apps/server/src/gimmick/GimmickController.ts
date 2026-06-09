@@ -30,7 +30,8 @@ import { TowerSchema } from "../schemas/TowerSchema.js";
 import { AoeSchema } from "../schemas/AoeSchema.js";
 
 type ScheduledEvent = { at: number; fn: () => void; fired: boolean };
-type StartOptions = { scripted?: boolean };
+type StartOptions = { stopOnFailure?: boolean };
+type TowerSide = "왼쪽탑" | "오른쪽탑";
 
 const MAX_LOGS = 50;
 const CLONE_BAIT_RADIUS = 2;
@@ -38,33 +39,16 @@ const CLONE_SPOT_RADIUS = 0.42;
 const KICK_RANGE = 8;
 const KICK_ANGLE = Math.PI / 4;
 const KICK_BAIT_RESOLVE_DELAY_MS = 3200;
-const SCRIPTED_POST_ROUND_MARKERS: Record<number, Partial<Record<PlayerSchema["role"], MarkerType>>> = {
-  1: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
-  2: { MT: "share", H1: "spread", D2: "share", D4: "cone" },
-  3: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
-  4: { ST: "share", H2: "spread", D1: "share", D3: "cone" },
-  5: { ST: "cone", H2: "spread", D1: "cone", D3: "spread" },
-  6: { ST: "share", H2: "spread", D1: "share", D3: "cone" }
-};
-const SCRIPTED_INITIAL_MARKERS: Record<PlayerSchema["role"], MarkerType> = {
-  MT: "share",
-  ST: "spread",
-  H1: "spread",
-  H2: "spread",
-  D1: "cone",
-  D2: "share",
-  D3: "cone",
-  D4: "cone"
-};
 
 export class GimmickController {
   private running = false;
   private schedule: ScheduledEvent[] = [];
   private idCounter = 0;
   private failed = false;
+  private stopOnFailure = false;
+  private stoppedByFailure = false;
   private baseIndex = 0;
   private rotDir = 1;
-  private scripted = false;
 
   constructor(private readonly state: RaidRoomState) {}
 
@@ -74,17 +58,18 @@ export class GimmickController {
     }
     this.reset();
     this.running = true;
-    this.scripted = options.scripted === true;
+    this.stopOnFailure = options.stopOnFailure === true;
+    this.stoppedByFailure = false;
     this.state.gimmick = "missing";
     this.state.gimmickPhase = "running";
     this.state.bossActive = true;
     this.state.bossCast = "missing";
     this.state.elapsed = 0;
+    this.state.paused = false;
     this.failed = false;
 
-    // 봇 보충 공략은 프론트 공략보기와 같은 방향/패턴을 사용한다.
-    this.baseIndex = this.scripted ? 3 : Math.floor(Math.random() * DIRECTION_COUNT);
-    this.rotDir = this.scripted ? 1 : Math.random() < 0.5 ? 1 : -1;
+    this.baseIndex = Math.floor(Math.random() * DIRECTION_COUNT);
+    this.rotDir = Math.random() < 0.5 ? 1 : -1;
 
     this.buildTimeline();
     this.log("보스 캐스팅: 행방불명");
@@ -98,16 +83,24 @@ export class GimmickController {
     this.state.bossCast = "";
     this.state.round = 0;
     this.state.elapsed = 0;
+    this.state.paused = false;
   }
 
-  restart(gimmick: string) {
-    this.stop();
-    this.start(gimmick);
+  pause() {
+    if (this.running && this.state.gimmickPhase === "running") {
+      this.state.paused = true;
+    }
+  }
+
+  resume() {
+    if (this.running && this.state.gimmickPhase === "running") {
+      this.state.paused = false;
+    }
   }
 
   /** 매 시뮬레이션 틱마다 호출. dtMs만큼 시간을 진행하고 도래한 이벤트를 실행. */
   update(dtMs: number) {
-    if (!this.running) {
+    if (!this.running || this.state.paused) {
       return;
     }
     this.state.elapsed += dtMs;
@@ -126,9 +119,11 @@ export class GimmickController {
 
   private reset() {
     this.running = false;
-    this.scripted = false;
     this.schedule = [];
     this.idCounter = 0;
+    this.stopOnFailure = false;
+    this.stoppedByFailure = false;
+    this.state.paused = false;
     this.state.towers.clear();
     this.state.aoes.splice(0, this.state.aoes.length);
     this.state.logs.splice(0, this.state.logs.length);
@@ -158,7 +153,7 @@ export class GimmickController {
         this.state.bossCast = "";
       }
       this.addAoe(this.makeCircleAoe("raidwide", 0, 0, ARENA_RADIUS));
-      this.scripted ? this.assignScriptedMarkers(SCRIPTED_INITIAL_MARKERS, true) : this.assignInitialMarkers();
+      this.assignInitialMarkers();
       this.spawnTowers(1);
       this.log("광역 공격 완료 / 1차 머리징 부여");
     });
@@ -200,26 +195,6 @@ export class GimmickController {
       p.markerVisible = false;
       p.markerCount = 0;
     });
-  }
-
-  private assignScriptedMarkers(markers: Partial<Record<PlayerSchema["role"], MarkerType>>, clearAll = false): string[] {
-    if (clearAll) {
-      this.clearAllMarkers();
-    }
-    if (Object.keys(markers).length === 0) {
-      return [];
-    }
-    const assignedIds: string[] = [];
-    this.state.players.forEach((player) => {
-      const marker = markers[player.role];
-      if (marker) {
-        player.marker = marker;
-        player.markerVisible = true;
-        assignedIds.push(player.id);
-      }
-    });
-    this.log("고정 공략 머리징 부여");
-    return assignedIds;
   }
 
   private giveMarker(p: PlayerSchema, marker: MarkerType) {
@@ -284,7 +259,7 @@ export class GimmickController {
   }
 
   private startBossCast(round: number) {
-    const cast = this.scripted ? getEvenRoundCast(round) : Math.random() < 0.5 ? "future" : "past";
+    const cast = Math.random() < 0.5 ? "future" : "past";
     this.state.bossCast = cast;
     this.log(`보스 캐스팅: ${cast === "future" ? "미래의 종언" : "과거의 종언"}`);
     const castEndsAt = this.state.elapsed + BOSS_CAST_MS;
@@ -326,18 +301,36 @@ export class GimmickController {
     const all = this.players();
     const towers: TowerSchema[] = [];
     this.state.towers.forEach((t) => towers.push(t));
+    const sortedTowers = sortTowersByBossFacingLeftRight(towers);
 
     // --- 탑 인원 판정 ---
-    const towerOccupants: { id: string; p: PlayerSchema }[][] = towers.map((tower) =>
+    const towerOccupants: { id: string; p: PlayerSchema }[][] = sortedTowers.map((tower) =>
       all.filter((e) => isInCircle(e.p.x, e.p.z, tower.x, tower.z, TOWER_RADIUS))
     );
-
-    towers.forEach((tower, i) => {
-      const occ = towerOccupants[i] ?? [];
-      if (occ.length !== TOWER_REQUIRED_OCCUPANTS) {
-        this.failRound(`${round}번 탑 인원 ${occ.length}명 (2명 필요)`);
+    const towerSideByPlayerId = new Map<string, TowerSide>();
+    towerOccupants.forEach((occupants, index) => {
+      const side = towerSideLabel(index);
+      for (const occupant of occupants) {
+        towerSideByPlayerId.set(occupant.id, side);
       }
     });
+
+    const towerFailures: string[] = [];
+    sortedTowers.forEach((_tower, i) => {
+      const occ = towerOccupants[i] ?? [];
+      if (occ.length !== TOWER_REQUIRED_OCCUPANTS) {
+        towerFailures.push(`${round}번 ${towerSideLabel(i)} 인원 ${occ.length}명 (${rolesText(occ)} / 2명 필요)`);
+      }
+    });
+    if (towerFailures.length > 0) {
+      for (const reason of towerFailures) {
+        this.recordFailure(reason);
+      }
+      this.stopAfterFailureIfNeeded();
+    }
+    if (this.stoppedByFailure) {
+      return;
+    }
 
     // 탑에 들어간 플레이어(중복 제거)
     const towerPlayerIds = new Set<string>();
@@ -347,16 +340,13 @@ export class GimmickController {
     const towerPlayers = all.filter((e) => towerPlayerIds.has(e.id));
 
     // --- 머리징 공격 판정(탑에 들어간 대상자) ---
-    this.resolveMarkerAttacks(round, towerPlayers, all);
+    this.resolveMarkerAttacks(round, towerPlayers, all, towerSideByPlayerId);
+    if (this.stoppedByFailure) {
+      return;
+    }
 
     // --- 머리징 재부여 ---
-    if (this.scripted) {
-      const nextMarkers = SCRIPTED_POST_ROUND_MARKERS[round] ?? {};
-      const reassignedIds = this.assignScriptedMarkers(nextMarkers);
-      this.scheduleAt(this.state.elapsed + MARKER_VISIBLE_MS, () => this.hideMarkers(reassignedIds));
-    } else {
-      this.reassignMarkers(round, towerPlayers);
-    }
+    this.reassignMarkers(round, towerPlayers);
 
     this.log(`${round}번 탑 작동 / 머리징 공격·재부여 완료`);
   }
@@ -364,53 +354,79 @@ export class GimmickController {
   private resolveMarkerAttacks(
     round: number,
     towerPlayers: { id: string; p: PlayerSchema }[],
-    all: { id: string; p: PlayerSchema }[]
+    all: { id: string; p: PlayerSchema }[],
+    towerSideByPlayerId: Map<string, TowerSide>
   ) {
     type Region =
-      | { type: "circle"; kind: MarkerType; ownerId: string; cx: number; cz: number; r: number }
-      | { type: "cone"; kind: "cone"; ownerId: string; cx: number; cz: number; dir: number };
+      | { type: "circle"; kind: MarkerType; ownerId: string; side: TowerSide; cx: number; cz: number; r: number }
+      | { type: "cone"; kind: "cone"; ownerId: string; side: TowerSide; cx: number; cz: number; dir: number };
 
     const regions: Region[] = [];
+    const validations: (() => void)[] = [];
 
     for (const owner of towerPlayers) {
       const marker = owner.p.marker as MarkerType | "";
+      const ownerSide = towerSideByPlayerId.get(owner.id);
+      if (!ownerSide) {
+        continue;
+      }
       if (marker === "share") {
-        regions.push({ type: "circle", kind: "share", ownerId: owner.id, cx: owner.p.x, cz: owner.p.z, r: SHARE_RADIUS });
-        const count = all.filter((e) => isInCircle(e.p.x, e.p.z, owner.p.x, owner.p.z, SHARE_RADIUS)).length;
-        if (count !== SHARE_REQUIRED) {
-          this.failRound(`쉐어징(${owner.p.role}) 인원 ${count}명 (3명 필요)`);
-        }
+        regions.push({ type: "circle", kind: "share", ownerId: owner.id, side: ownerSide, cx: owner.p.x, cz: owner.p.z, r: SHARE_RADIUS });
         this.addAoe(this.makeCircleAoe("share", owner.p.x, owner.p.z, SHARE_RADIUS));
+        validations.push(() => {
+          const count = all.filter((e) => isInCircle(e.p.x, e.p.z, owner.p.x, owner.p.z, SHARE_RADIUS)).length;
+          if (count !== SHARE_REQUIRED) {
+            this.failRound(`${round}번 ${ownerSide} 쉐어징(${owner.p.role}) 인원 ${count}명 (3명 필요)`);
+          }
+        });
       } else if (marker === "spread") {
-        regions.push({ type: "circle", kind: "spread", ownerId: owner.id, cx: owner.p.x, cz: owner.p.z, r: SPREAD_RADIUS });
-        const others = all.filter((e) => e.id !== owner.id && isInCircle(e.p.x, e.p.z, owner.p.x, owner.p.z, SPREAD_RADIUS));
-        if (others.length > 0) {
-          this.failRound(`산개징(${owner.p.role})에 ${others.length}명 추가 피격`);
-        }
+        regions.push({ type: "circle", kind: "spread", ownerId: owner.id, side: ownerSide, cx: owner.p.x, cz: owner.p.z, r: SPREAD_RADIUS });
         this.addAoe(this.makeCircleAoe("spread", owner.p.x, owner.p.z, SPREAD_RADIUS));
+        validations.push(() => {
+          const others = all.filter((e) => e.id !== owner.id && isInCircle(e.p.x, e.p.z, owner.p.x, owner.p.z, SPREAD_RADIUS));
+          if (others.length > 0) {
+            this.failRound(`${round}번 ${ownerSide} 산개징(${owner.p.role})에 ${others.length}명 추가 피격`);
+          }
+        });
       } else if (marker === "cone") {
         const nearest = nearestOther(owner, all);
         const dir = nearest ? Math.atan2(nearest.p.x - owner.p.x, nearest.p.z - owner.p.z) : 0;
-        regions.push({ type: "cone", kind: "cone", ownerId: owner.id, cx: owner.p.x, cz: owner.p.z, dir });
+        regions.push({ type: "cone", kind: "cone", ownerId: owner.id, side: ownerSide, cx: owner.p.x, cz: owner.p.z, dir });
         this.addAoe(this.makeConeAoe(owner.p.x, owner.p.z, dir));
+      }
+    }
+
+    for (const validate of validations) {
+      validate();
+      if (this.stoppedByFailure) {
+        return;
       }
     }
 
     // --- 중첩 판정: 한 플레이어가 2개 이상 범위에 포함되면 즉사 ---
     for (const q of all) {
       let hits = 0;
+      const hitSides: TowerSide[] = [];
       for (const region of regions) {
         if (region.type === "circle") {
-          if (isInCircle(q.p.x, q.p.z, region.cx, region.cz, region.r)) hits += 1;
+          if (isInCircle(q.p.x, q.p.z, region.cx, region.cz, region.r)) {
+            hits += 1;
+            hitSides.push(region.side);
+          }
         } else {
           // 부채꼴 대상자 본인은 자기 부채꼴에 포함되지 않는다.
           if (q.id !== region.ownerId && isInCone(q.p.x, q.p.z, region.cx, region.cz, region.dir, CONE_ANGLE, CONE_RANGE)) {
             hits += 1;
+            hitSides.push(region.side);
           }
         }
       }
       if (hits >= 2) {
-        this.failRound(`${q.p.role} 중첩 피격(${hits}개 범위)`);
+        const sides = Array.from(new Set(hitSides)).join("/");
+        this.failRound(`${round}번 ${sides} 범위 중첩: ${q.p.role} ${hits}개 피격`);
+        if (this.stoppedByFailure) {
+          return;
+        }
       }
     }
   }
@@ -465,12 +481,29 @@ export class GimmickController {
   }
 
   private failRound(reason: string) {
+    this.recordFailure(reason);
+    this.stopAfterFailureIfNeeded();
+  }
+
+  private recordFailure(reason: string) {
     this.failed = true;
     this.log(`❌ 실패: ${reason}`);
   }
 
+  private stopAfterFailureIfNeeded() {
+    if (this.stopOnFailure && !this.stoppedByFailure) {
+      this.stoppedByFailure = true;
+      this.running = false;
+      this.state.paused = false;
+      this.state.gimmickPhase = "failed";
+      this.state.bossCast = "";
+      this.log("기믹 중단: 실패시 중단 옵션");
+    }
+  }
+
   private finish() {
     this.running = false;
+    this.state.paused = false;
     this.state.towers.clear();
     this.state.bossCast = "";
     this.state.gimmickPhase = this.failed ? "failed" : "success";
@@ -511,4 +544,41 @@ function nearestOther(
 
 function getEvenRoundCast(round: number): "future" | "past" {
   return round % 4 === 0 ? "future" : "past";
+}
+
+function towerSideLabel(index: number): TowerSide {
+  return index === 0 ? "왼쪽탑" : "오른쪽탑";
+}
+
+function rolesText(entries: { p: PlayerSchema }[]): string {
+  const roles = entries.map((entry) => entry.p.role).join(", ");
+  return roles || "없음";
+}
+
+function sortTowersByBossFacingLeftRight<T extends { x: number; z: number }>(towers: T[]): T[] {
+  if (towers.length !== 2 || !towers[0] || !towers[1]) {
+    return towers;
+  }
+  const [a, b] = towers;
+  const midpoint = scale2(add2(a, b), 0.5);
+  const forwardToBoss = normalize2(scale2(midpoint, -1));
+  const leftSide = { x: -forwardToBoss.z, z: forwardToBoss.x };
+  return dot2(a, leftSide) < dot2(b, leftSide) ? [a, b] : [b, a];
+}
+
+function add2(a: { x: number; z: number }, b: { x: number; z: number }): { x: number; z: number } {
+  return { x: a.x + b.x, z: a.z + b.z };
+}
+
+function scale2(a: { x: number; z: number }, amount: number): { x: number; z: number } {
+  return { x: a.x * amount, z: a.z * amount };
+}
+
+function normalize2(a: { x: number; z: number }): { x: number; z: number } {
+  const length = Math.hypot(a.x, a.z) || 1;
+  return { x: a.x / length, z: a.z / length };
+}
+
+function dot2(a: { x: number; z: number }, b: { x: number; z: number }): number {
+  return a.x * b.x + a.z * b.z;
 }

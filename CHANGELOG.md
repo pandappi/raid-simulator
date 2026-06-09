@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 2026-06-09
+
+#### 행방불명 공략 시뮬레이션 (가이드 봇 / 공략보기 / 컨트롤 확장)
+- **가이드 봇**: 라이브룸 시작 시 빈 역할을 서버 권위 봇으로 자동 보충(`apps/server/src/bots/BotController.ts`). 봇은 실제 랜덤 규칙(탑 방향/머리징/미래·과거)을 따르며 정답 위치로 이동. 첫 머리징 후 1초 대기 뒤 이동 시작.
+- **전략 위치 계산**: `packages/shared/src/missingStrategy.ts` 추가 — 조 배정(쉐어 페어=1조, 1조=탑1·2·3·8 / 2조=탑4·5·6·7), 좌/우 탑 배정(첫 부여 vs 재지정 규칙), 탑 주인·쉐어 도우미·부채꼴 미끼·비활성 위치(홀/짝 라운드 시계 배치).
+- **공략보기(가이드 재생)**: 선택 역할을 카메라 포커스로, 모든 역할이 스크립트 위치를 따라감(`useScenarioPlayback.ts`). 카메라가 조종 캐릭터를 따라가도록 변경(`CameraControls`).
+- **컨트롤 확장**: 일시정지/재개, 실패 즉시 중단 옵션(기본 ON), 로비 역할 조회(`GET /state`)로 이미 점유된 역할 버튼 비활성화.
+- **시각/표시**: 보스 캐스팅 진행바(`행방불명`/미래/과거), 머리징을 텍스트→도형 아이콘(쉐어/산개/부채꼴), 분신 미끼·발차기 인디케이터, 탑 채움이 `elapsed` 기준이라 일시정지와 함께 멈춤.
+- **수치 튜닝**: 보스 히트박스 6.5m, 탑 8m·중심 8.5m, 쉐어 4.5m·산개 4m, 시작 광역 캐스팅 `MISSING_CAST_MS`.
+- 상세 작업목록: [`docs/mechanics/missing-simulator-worklog.md`](docs/mechanics/missing-simulator-worklog.md), 현황/미구현: [`docs/mechanics/missing-implementation.md`](docs/mechanics/missing-implementation.md)
+- ⚠️ 알려진 점검 필요(미수정): 발차기 유도가 다음 탑 방향을 `base=3` 고정 + rotDir 무시로 추측(`getTowerPairByRound`), 미래/과거를 `round%4` 결정론으로 추측(`getEvenRoundCast`) → 실제 랜덤 상태와 어긋날 수 있음.
+
 ### 2026-06-08
 
 #### 보스 기믹 "행방불명" 1단계 + 기믹 컨트롤

@@ -12,6 +12,8 @@ type PlayerCylinderProps = {
   isSelf: boolean;
 };
 
+const PLAYER_VISUAL_RADIUS = PLAYER_RADIUS * 0.4;
+
 export function PlayerCylinder({ player, isSelf }: PlayerCylinderProps) {
   const groupRef = useRef<Group>(null);
   const initializedRef = useRef(false);
@@ -53,7 +55,7 @@ export function PlayerCylinder({ player, isSelf }: PlayerCylinderProps) {
   return (
     <group ref={groupRef}>
       <mesh position={[0, PLAYER_HEIGHT / 2, 0]} castShadow>
-        <cylinderGeometry args={[PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_HEIGHT, 32]} />
+        <cylinderGeometry args={[PLAYER_VISUAL_RADIUS, PLAYER_VISUAL_RADIUS, PLAYER_HEIGHT, 32]} />
         <meshStandardMaterial
           color={color}
           emissive={isSelf ? "#8a6f00" : "#000000"}
@@ -62,13 +64,13 @@ export function PlayerCylinder({ player, isSelf }: PlayerCylinderProps) {
           metalness={0.08}
         />
       </mesh>
-      <mesh position={[0, PLAYER_HEIGHT + 0.04, -PLAYER_RADIUS * 0.72]} castShadow>
-        <boxGeometry args={[PLAYER_RADIUS * 0.52, 0.16, PLAYER_RADIUS * 0.92]} />
+      <mesh position={[0, PLAYER_HEIGHT + 0.04, -PLAYER_VISUAL_RADIUS * 0.72]} castShadow>
+        <boxGeometry args={[PLAYER_VISUAL_RADIUS * 0.52, 0.16, PLAYER_VISUAL_RADIUS * 0.92]} />
         <meshStandardMaterial color={isSelf ? "#fff2a8" : "#f7fafc"} roughness={0.5} />
       </mesh>
       {isSelf && (
         <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[PLAYER_RADIUS + 0.14, PLAYER_RADIUS + 0.2, 40]} />
+          <ringGeometry args={[PLAYER_VISUAL_RADIUS + 0.14, PLAYER_VISUAL_RADIUS + 0.2, 40]} />
           <meshBasicMaterial color="#ffd400" />
         </mesh>
       )}

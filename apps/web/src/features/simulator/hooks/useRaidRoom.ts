@@ -17,6 +17,9 @@ type PlayerSchemaLike = Partial<PlayerSnapshot> & {
   onChange?: (callback: () => void) => unknown;
 };
 
+type GimmickAction = "practiceStart" | "stop" | "pause" | "resume";
+type GimmickOptions = { stopOnFailure?: boolean };
+
 const SERVER_URL = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "ws://localhost:2567";
 
 export function useRaidRoom() {
@@ -26,6 +29,9 @@ export function useRaidRoom() {
     const nextPlayers: Record<string, PlayerSnapshot> = {};
 
     state.players?.forEach?.((value, key) => {
+      if (!isRecord(value)) {
+        return;
+      }
       const player = value as Partial<PlayerSnapshot>;
       if (
         typeof player.id === "string" &&
@@ -98,6 +104,9 @@ export function useRaidRoom() {
 
         syncPlayers(room.state);
         room.state.players?.onAdd?.((player, key) => {
+          if (!isRecord(player)) {
+            return;
+          }
           upsertPlayer(player, key);
           player.onChange?.(() => upsertPlayer(player, key));
         }, true);
@@ -106,7 +115,10 @@ export function useRaidRoom() {
 
         // 기믹 상태(보스/탑/공격범위/로그)는 패치마다 통째로 스냅샷해 store에 반영.
         syncGimmick(room.state);
-        room.onStateChange((state) => syncGimmick(state));
+        room.onStateChange((state) => {
+          syncPlayers(state);
+          syncGimmick(state);
+        });
 
         room.onLeave(() => {
           const latest = useSimulatorStore.getState();
@@ -144,8 +156,8 @@ export function useRaidRoom() {
     roomRef.current?.send("input", input);
   }, []);
 
-  const sendGimmick = useCallback((action: "start" | "fillStart" | "stop" | "restart", gimmick = "missing") => {
-    roomRef.current?.send("gimmick", { action, gimmick });
+  const sendGimmick = useCallback((action: GimmickAction, gimmick = "missing", options: GimmickOptions = {}) => {
+    roomRef.current?.send("gimmick", { action, gimmick, ...options });
   }, []);
 
   return {
@@ -198,6 +210,7 @@ function syncGimmick(state: unknown) {
     phase: typeof s.gimmickPhase === "string" ? s.gimmickPhase : "idle",
     round: Number(s.round) || 0,
     elapsed: Number(s.elapsed) || 0,
+    paused: s.paused === true,
     bossActive: s.bossActive === true,
     bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
     towers,
@@ -206,7 +219,10 @@ function syncGimmick(state: unknown) {
   });
 }
 
-function toPlayerSnapshot(player: PlayerSchemaLike): PlayerSnapshot | null {
+function toPlayerSnapshot(player: unknown): PlayerSnapshot | null {
+  if (!isRecord(player)) {
+    return null;
+  }
   if (
     typeof player.id === "string" &&
     typeof player.name === "string" &&
@@ -233,4 +249,8 @@ function toPlayerSnapshot(player: PlayerSchemaLike): PlayerSnapshot | null {
 
 function readMarker(value: unknown): PlayerSnapshot["marker"] {
   return value === "share" || value === "spread" || value === "cone" ? value : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> & PlayerSchemaLike {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

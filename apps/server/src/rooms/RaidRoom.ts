@@ -1,5 +1,5 @@
 import colyseus, { type Client } from "colyseus";
-import { MAX_INPUT_DT, type JoinOptions } from "@raid-simulator/shared";
+import { isPlayerRole, MAX_INPUT_DT, type JoinOptions } from "@raid-simulator/shared";
 import { PlayerSchema } from "../schemas/PlayerSchema.js";
 import { RaidRoomState } from "../schemas/RaidRoomState.js";
 import { isClientInput, ROLE_INITIAL_POSITIONS, updatePlayerPosition } from "../utils/movement.js";
@@ -11,6 +11,11 @@ const { Room } = colyseus;
 
 // 기믹 타임라인 진행용 틱 간격(ms). 이동은 명령 기반이라 이 틱은 시간 진행에만 쓴다.
 const GIMMICK_TICK_MS = 50;
+const occupiedHumanRoles = new Set<JoinOptions["role"]>();
+
+export function getOccupiedHumanRoles(): JoinOptions["role"][] {
+  return [...occupiedHumanRoles];
+}
 
 export class RaidRoom extends Room<RaidRoomState> {
   private gimmick!: GimmickController;
@@ -42,28 +47,35 @@ export class RaidRoom extends Room<RaidRoomState> {
       }
     });
 
-    // 기믹 제어: 누구나 시작/중지/재시작할 수 있다.
+    // 기믹 제어: 누구나 시작/중단/일시정지/재개할 수 있다.
     this.onMessage("gimmick", (_client, payload) => {
       if (!isRecord(payload)) {
         return;
       }
       const action = payload.action;
       const gimmick = typeof payload.gimmick === "string" ? payload.gimmick : "missing";
-      if (action === "fillStart") {
-        this.bots.prepareForFillStart();
-        this.gimmick.start(gimmick, { scripted: true });
-      } else if (action === "start") {
-        this.gimmick.start(gimmick);
+      const stopOnFailure = payload.stopOnFailure === true;
+      if (action === "start") {
+        this.bots.stop();
+        this.gimmick.start(gimmick, { stopOnFailure });
+      } else if (action === "practiceStart") {
+        this.bots.startPracticeFill();
+        this.gimmick.start(gimmick, { stopOnFailure });
       } else if (action === "stop") {
         this.gimmick.stop();
-      } else if (action === "restart") {
-        this.gimmick.restart(gimmick);
+        this.bots.stop();
+      } else if (action === "pause") {
+        this.gimmick.pause();
+      } else if (action === "resume") {
+        this.gimmick.resume();
       }
     });
 
     // 기믹 타임라인 진행.
     this.setSimulationInterval((dt) => {
-      this.bots.update(dt);
+      if (!this.state.paused && this.state.gimmickPhase === "running") {
+        this.bots.update(dt);
+      }
       this.gimmick.update(dt);
     }, GIMMICK_TICK_MS);
   }
@@ -85,10 +97,19 @@ export class RaidRoom extends Room<RaidRoomState> {
     player.z = initialPosition.z;
 
     this.state.players.set(client.sessionId, player);
+    occupiedHumanRoles.add(joinOptions.role);
   }
 
   onLeave(client: Client) {
+    const player = this.state.players.get(client.sessionId);
     this.state.players.delete(client.sessionId);
+    if (player && isPlayerRole(player.role)) {
+      occupiedHumanRoles.delete(player.role);
+    }
+  }
+
+  onDispose() {
+    occupiedHumanRoles.clear();
   }
 }
 

@@ -8,54 +8,34 @@ This document summarizes the implementation work for the current Missing mechani
 
 - Added the initial `행방불명` boss cast sequence before debuffs appear.
 - Added boss cast UI and progress bar for `행방불명`, `미래의 종언`, and `과거의 종언`.
-- Updated tower geometry to 6m width and 6m distance from arena center.
+- Added live-room start behavior where empty roles are filled by server-authoritative guide bots before the mechanic begins.
+- Live-room start now uses random mechanic assignment rules instead of the scripted guide marker table.
+- Added guide playback where the selected role is used as the camera focus and every role follows the scripted guide positions.
+- Added a one-second hold after the first head markers appear before guide playback starts moving.
+- Added pause/resume controls. Tower fill progress now follows mechanic elapsed time, so it pauses with the timeline.
+- Added a failure-stop option that halts the mechanic immediately while preserving logs and visible failure ranges.
+- Failure logs now identify whether the issue was on the boss-facing left tower or right tower.
+- Updated tower geometry to 8m width and 8.5m distance from arena center.
 - Updated head markers from text labels to shape-based indicators:
   - Spread: filled circular marker.
   - Cone: fan-shaped marker.
   - Share: center circle with inward arrows.
 - Standardized marker color to a pale orange tone.
-- Updated share attack radius to 3.4m.
+- Updated share attack radius to 4.5m and spread attack radius to 4m.
 - Added one-second persistence for attack area indicators after damage resolution.
 - Added clone bait and kick indicators for even tower follow-up handling.
 
-## Scripted Strategy Mode
-
-- Added a frontend-only scripted guide playback.
-- Added `봇 보충 시작` for live rooms:
-  - Missing roles are filled with bots.
-  - Human and bot roles are normalized to the assumed start formation:
-
-```text
-MT ST D1 D2
-H1 H2 D3 D4
-```
-
-- The scripted pattern uses the fixed initial example:
-  - Group 1: `MT`, `H1`, `D2`, `D4`
-  - Group 2: `ST`, `H2`, `D1`, `D3`
-- Group 1 handles towers 1, 2, 3, and 8.
-- Group 2 handles towers 4, 5, 6, and 7.
-- Debuff reassignment display now follows tower-resolution timing:
-  - Tower 4 uses Group 2's initial debuffs.
-  - After tower 3, only Group 1's reassigned debuffs are shown.
-  - After tower 7, no reassigned debuffs are shown.
-
-## Bot Movement
-
-- Bots no longer move before the first debuff assignment.
-- Bots wander smoothly after debuffs are assigned instead of snapping between random targets.
-- Bots move into tower mechanic positions in time for the tower lock window.
-- Even-tower future/past bait movement was added:
-  - `과거의 종언`: bait toward the next tower pair midpoint.
-  - `미래의 종언`: bait opposite the next tower pair midpoint.
-- Bot positioning uses the role's current debuff state rather than a hard-coded round-only table.
-
 ## Position Tuning
 
-- Odd tower inactive tank stands just outside the left tower edge.
+- Odd tower inactive tank stands 4.3m from the left tower center and 8m from arena center.
 - Odd tower left cone target stands inside the tower as close to the outer edge as possible.
-- Odd tower inactive dealer and healer positions were tuned around tower edges.
-- Even tower cone, spread, healer, ranged, tank, and melee positions were tuned using boss-facing left/right rules.
+- Odd tower left cone target was moved 0.1m further toward the tower center.
+- Odd tower inactive dealer stands 4.3m from the right tower center and 6m from arena center.
+- Odd tower inactive healer position was tuned around the left tower edge.
+- Even tower cone, spread, tank, and melee positions were tuned using boss-facing left/right rules.
+- Even tower cone targets were moved 0.1m further toward each tower center.
+- Even tower inactive healers stand on the arena-center side of the 9 o'clock waymark when the space between towers is treated as 6 o'clock.
+- Even tower inactive ranged dealers stand on the arena-center side of the 3 o'clock waymark when the space between towers is treated as 6 o'clock.
 
 ## Camera
 
@@ -72,4 +52,3 @@ pnpm --filter server build
 pnpm --filter web typecheck
 pnpm --filter web build
 ```
-

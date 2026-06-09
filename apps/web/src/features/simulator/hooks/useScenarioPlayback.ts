@@ -6,54 +6,79 @@ import {
   BOSS_CAST_MS,
   CONE_ANGLE,
   CONE_RANGE,
+  DEALER_ROLES,
   directionToPosition,
+  DIRECTION_COUNT,
+  getMissingActiveRolesForRound,
+  getMissingGroupOneRoles,
+  getMissingStrategyPositions,
+  isInCircle,
+  isInCone,
+  MARKER_CAP,
   MISSING_CAST_MS,
+  SHARE_REQUIRED,
   SHARE_RADIUS,
   SPREAD_RADIUS,
+  TANK_HEALER_ROLES,
   TOWER_ACTIVATE_MS,
   TOWER_DISTANCE,
   TOWER_INTERVAL_MS,
   TOWER_RADIUS,
+  TOWER_REQUIRED_OCCUPANTS,
   TOWER_ROUNDS,
   type MarkerType,
   type PlayerRole,
-  type PlayerSnapshot
+  type PlayerSnapshot,
+  sortMissingTowersByBossFacingLeftRight
 } from "@raid-simulator/shared";
-import { getSelfState, ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
+import { ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
 import { useSimulatorStore, type AoeView, type TowerView } from "../stores/simulatorStore";
 
 type Vec2 = { x: number; z: number };
-type ScenarioPlayer = { id: string; name: string; role: PlayerRole; group: 1 | 2; marker: MarkerType };
+type ScenarioPlayer = { id: string; name: string; role: PlayerRole; marker: MarkerType };
+type ScenarioConfig = {
+  initialMarkers: Record<PlayerRole, MarkerType>;
+  groupOneRoles: PlayerRole[];
+  roundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>>;
+  markerCountsByRound: Record<number, Record<PlayerRole, number>>;
+  baseIndex: number;
+  rotationDirection: 1 | -1;
+  evenCasts: Record<number, "future" | "past">;
+};
 type ScenarioFrame = {
   t: number;
   positions: Record<PlayerRole, Vec2>;
   markers: Partial<Record<PlayerRole, MarkerType>>;
 };
+type TowerSide = "왼쪽탑" | "오른쪽탑";
+type ScenarioValidation = {
+  failed: boolean;
+  completedRounds: number;
+  results: RoundValidation[];
+};
+type RoundValidation = {
+  round: number;
+  ok: boolean;
+  messages: string[];
+};
 
 const PLAYERS: ScenarioPlayer[] = [
-  { id: "guide-mt", name: "MT", role: "MT", group: 1, marker: "share" },
-  { id: "guide-st", name: "ST", role: "ST", group: 2, marker: "spread" },
-  { id: "guide-h1", name: "H1", role: "H1", group: 1, marker: "spread" },
-  { id: "guide-h2", name: "H2", role: "H2", group: 2, marker: "spread" },
-  { id: "guide-d1", name: "D1", role: "D1", group: 2, marker: "cone" },
-  { id: "guide-d2", name: "D2", role: "D2", group: 1, marker: "share" },
-  { id: "guide-d3", name: "D3", role: "D3", group: 2, marker: "cone" },
-  { id: "guide-d4", name: "D4", role: "D4", group: 1, marker: "cone" }
+  { id: "guide-mt", name: "MT", role: "MT", marker: "share" },
+  { id: "guide-st", name: "ST", role: "ST", marker: "spread" },
+  { id: "guide-h1", name: "H1", role: "H1", marker: "spread" },
+  { id: "guide-h2", name: "H2", role: "H2", marker: "spread" },
+  { id: "guide-d1", name: "D1", role: "D1", marker: "cone" },
+  { id: "guide-d2", name: "D2", role: "D2", marker: "share" },
+  { id: "guide-d3", name: "D3", role: "D3", marker: "cone" },
+  { id: "guide-d4", name: "D4", role: "D4", marker: "cone" }
 ];
 
-const INITIAL_MARKERS = Object.fromEntries(PLAYERS.map((player) => [player.role, player.marker])) as Record<PlayerRole, MarkerType>;
-const POST_ROUND_MARKERS: Record<number, Partial<Record<PlayerRole, MarkerType>>> = {
-  1: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
-  2: { MT: "share", H1: "spread", D2: "share", D4: "cone" },
-  3: { MT: "cone", H1: "spread", D2: "cone", D4: "spread" },
-  4: { ST: "share", H2: "spread", D1: "share", D3: "cone" },
-  5: { ST: "cone", H2: "spread", D1: "cone", D3: "spread" },
-  6: { ST: "share", H2: "spread", D1: "share", D3: "cone" }
-};
 const CLONE_BAIT_RADIUS = 2;
 const KICK_RANGE = 8;
 const KICK_ANGLE = Math.PI / 4;
+const INITIAL_MOVE_DELAY_MS = 1000;
 const MOVE_SETTLE_MS = 2200;
+const WAYMARK_INNER_DISTANCE = 11.4;
 const TOTAL_MS = MISSING_CAST_MS + (TOWER_ROUNDS - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS + 5000;
 const INITIAL_POSITIONS: Record<PlayerRole, Vec2> = {
   MT: { x: -4.5, z: 12.5 },
@@ -65,8 +90,15 @@ const INITIAL_POSITIONS: Record<PlayerRole, Vec2> = {
   D3: { x: 1.5, z: 15.5 },
   D4: { x: 4.5, z: 15.5 }
 };
+const INITIAL_LEFT_PRIORITY: PlayerRole[] = ["H1", "H2", "MT", "ST", "D1", "D2", "D3", "D4"];
+const MARKER_ORDER: MarkerType[] = ["share", "cone", "spread"];
+const MARKER_DEFAULT_SIDE: Record<MarkerType, "left" | "right"> = {
+  share: "left",
+  cone: "left",
+  spread: "right"
+};
 
-export function useScenarioPlayback(enabled: boolean, paused: boolean, controlledRole: PlayerRole | null = null) {
+export function useScenarioPlayback(enabled: boolean, paused: boolean, focusRole: PlayerRole | null = null) {
   const pausedRef = useRef(paused);
 
   useEffect(() => {
@@ -78,17 +110,18 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, controlle
       return;
     }
 
+    const scenario = createScenarioConfig();
     resetNetcode();
     const store = useSimulatorStore.getState();
-    const controlledPlayer = controlledRole ? PLAYERS.find((player) => player.role === controlledRole) : undefined;
-    store.setSessionId(controlledPlayer?.id ?? null);
-    store.setSelf(controlledRole ? `${controlledRole} 연습` : "공략보기", controlledRole);
+    const focusedPlayer = focusRole ? PLAYERS.find((player) => player.role === focusRole) : undefined;
+    store.setSessionId(focusedPlayer?.id ?? null);
+    store.setSelf(focusRole ? `${focusRole} 공략보기` : "공략보기", focusRole);
     store.setConnectionStatus("connected");
     store.setErrorMessage(null);
-    if (controlledPlayer) {
-      const initial = INITIAL_POSITIONS[controlledRole as PlayerRole];
-      setSelfId(controlledPlayer.id);
-      ingestSnapshot(controlledPlayer.id, initial.x, initial.z, Math.PI, 0);
+    if (focusedPlayer) {
+      const initial = INITIAL_POSITIONS[focusRole as PlayerRole];
+      setSelfId(focusedPlayer.id);
+      ingestSnapshot(focusedPlayer.id, initial.x, initial.z, Math.PI, 0);
     }
 
     let frame = 0;
@@ -99,11 +132,11 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, controlle
         elapsed = (elapsed + Math.max(0, time - lastTime)) % TOTAL_MS;
       }
       lastTime = time;
-      updateScenario(elapsed, controlledRole);
+      updateScenario(elapsed, focusRole, pausedRef.current, scenario);
       frame = window.requestAnimationFrame(tick);
     };
 
-    updateScenario(0, controlledRole);
+    updateScenario(0, focusRole, pausedRef.current, scenario);
     frame = window.requestAnimationFrame(tick);
 
     return () => {
@@ -111,20 +144,116 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, controlle
       resetNetcode();
       useSimulatorStore.getState().reset();
     };
-  }, [enabled, controlledRole]);
+  }, [enabled, focusRole]);
 }
 
-function updateScenario(elapsed: number, controlledRole: PlayerRole | null) {
-  const positions = samplePositions(elapsed);
-  const markers = getMarkers(elapsed);
+function createScenarioConfig(): ScenarioConfig {
+  const initialMarkers = createInitialMarkers();
+  const groupOneRoles = getMissingGroupOneRoles(initialMarkers);
+  const markerCounts = Object.fromEntries(PLAYERS.map((player) => [player.role, 1])) as Record<PlayerRole, number>;
+  const currentMarkers = { ...initialMarkers };
+  const roundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>> = {};
+  const markerCountsByRound: Record<number, Record<PlayerRole, number>> = {};
+
+  for (let round = 1; round <= TOWER_ROUNDS; round++) {
+    const activeRoles = getMissingActiveRolesForRound(round, groupOneRoles);
+    markerCountsByRound[round] = { ...markerCounts };
+    const currentRoundMarkers = pickMarkers(currentMarkers, activeRoles);
+    roundMarkers[round] = currentRoundMarkers;
+    const nextMarkers = createNextMarkers(currentRoundMarkers, activeRoles, markerCounts);
+    for (const role of activeRoles) {
+      const marker = nextMarkers[role];
+      if (marker) {
+        currentMarkers[role] = marker;
+      }
+    }
+  }
+
+  const evenCasts: Record<number, "future" | "past"> = {};
+  for (let round = 2; round <= TOWER_ROUNDS; round += 2) {
+    evenCasts[round] = Math.random() < 0.5 ? "future" : "past";
+  }
+
+  return {
+    initialMarkers,
+    groupOneRoles,
+    roundMarkers,
+    markerCountsByRound,
+    baseIndex: Math.floor(Math.random() * DIRECTION_COUNT),
+    rotationDirection: Math.random() < 0.5 ? 1 : -1,
+    evenCasts
+  };
+}
+
+function createInitialMarkers(): Record<PlayerRole, MarkerType> {
+  const markers = {} as Record<PlayerRole, MarkerType>;
+  const tankHealer = shuffle([...TANK_HEALER_ROLES]);
+  const dealers = shuffle([...DEALER_ROLES]);
+  const shareTankHealer = tankHealer[0];
+  const shareDealer = dealers[0];
+  if (shareTankHealer) markers[shareTankHealer] = "share";
+  if (shareDealer) markers[shareDealer] = "share";
+
+  const patternA = Math.random() < 0.5;
+  const tankHealerMarker: MarkerType = patternA ? "cone" : "spread";
+  const dealerMarker: MarkerType = patternA ? "spread" : "cone";
+  for (const role of tankHealer.slice(1)) {
+    markers[role] = tankHealerMarker;
+  }
+  for (const role of dealers.slice(1)) {
+    markers[role] = dealerMarker;
+  }
+  return markers;
+}
+
+function createNextMarkers(
+  previousMarkers: Partial<Record<PlayerRole, MarkerType>>,
+  roles: PlayerRole[],
+  markerCounts: Record<PlayerRole, number>
+): Partial<Record<PlayerRole, MarkerType>> {
+  const eligibleRoles = roles.filter((role) => markerCounts[role] < MARKER_CAP);
+  if (eligibleRoles.length === 0) {
+    return {};
+  }
+  const shareCount = roles.filter((role) => previousMarkers[role] === "share").length;
+  const pool: MarkerType[] = shareCount === 2 ? ["cone", "cone", "spread", "spread"] : ["cone", "spread", "share", "share"];
+  const shuffledRoles = shuffle(eligibleRoles);
+  const shuffledPool = shuffle(pool);
+  const nextMarkers: Partial<Record<PlayerRole, MarkerType>> = {};
+  shuffledRoles.forEach((role, index) => {
+    const marker = shuffledPool[index];
+    if (marker) {
+      nextMarkers[role] = marker;
+      markerCounts[role] += 1;
+    }
+  });
+  return nextMarkers;
+}
+
+function pickMarkers(
+  markers: Record<PlayerRole, MarkerType>,
+  roles: PlayerRole[]
+): Partial<Record<PlayerRole, MarkerType>> {
+  const picked: Partial<Record<PlayerRole, MarkerType>> = {};
+  for (const role of roles) {
+    picked[role] = markers[role];
+  }
+  return picked;
+}
+
+function updateScenario(elapsed: number, focusRole: PlayerRole | null, paused: boolean, scenario: ScenarioConfig) {
+  const positions = samplePositions(elapsed, scenario);
+  const markers = getMarkers(elapsed, scenario);
+  const validation = getScenarioValidation(elapsed, scenario);
   const players: Record<string, PlayerSnapshot> = {};
+  const actualPositions = {} as Record<PlayerRole, Vec2>;
 
   for (const player of PLAYERS) {
     const scriptedPosition = positions[player.role];
-    const selfState = player.role === controlledRole ? getSelfState() : null;
-    const position = selfState ? { x: selfState.x, z: selfState.z } : scriptedPosition;
-    const nextPosition = samplePositions(Math.min(TOTAL_MS, elapsed + 80))[player.role];
-    const rotation = selfState ? selfState.rotation : Math.atan2(nextPosition.x - position.x, nextPosition.z - position.z);
+    const position = scriptedPosition;
+    actualPositions[player.role] = position;
+    const nextPosition = samplePositions(Math.min(TOTAL_MS, elapsed + 80), scenario)[player.role];
+    const rotation = Math.atan2(nextPosition.x - position.x, nextPosition.z - position.z);
     const marker = markers[player.role] ?? "";
     const snapshot: PlayerSnapshot = {
       id: player.id,
@@ -138,28 +267,27 @@ function updateScenario(elapsed: number, controlledRole: PlayerRole | null) {
       markerVisible: Boolean(marker)
     };
     players[player.id] = snapshot;
-    if (player.role !== controlledRole) {
-      ingestSnapshot(player.id, snapshot.x, snapshot.z, snapshot.rotation, 0);
-    }
+    ingestSnapshot(player.id, snapshot.x, snapshot.z, snapshot.rotation, 0);
   }
 
   const round = getRound(elapsed);
   useSimulatorStore.getState().setPlayers(players);
   useSimulatorStore.getState().setGimmick({
     gimmick: "missing",
-    phase: elapsed > TOTAL_MS - 3000 ? "success" : "running",
+    phase: validation.failed ? "failed" : elapsed > TOTAL_MS - 3000 ? "success" : "running",
     round,
     elapsed,
+    paused,
     bossActive: true,
-    bossCast: getBossCast(elapsed),
-    towers: getTowers(elapsed),
-    aoes: getAoes(elapsed, positions),
-    logs: getLogs(elapsed)
+    bossCast: getBossCast(elapsed, scenario),
+    towers: getTowers(elapsed, scenario),
+    aoes: getAoes(elapsed, actualPositions, scenario),
+    logs: getLogs(elapsed, scenario, validation)
   });
 }
 
-function samplePositions(elapsed: number): Record<PlayerRole, Vec2> {
-  const frames = buildFrames();
+function samplePositions(elapsed: number, scenario: ScenarioConfig): Record<PlayerRole, Vec2> {
+  const frames = buildFrames(scenario);
   let previous = frames[0] as ScenarioFrame;
   let next = frames[frames.length - 1] as ScenarioFrame;
 
@@ -173,7 +301,7 @@ function samplePositions(elapsed: number): Record<PlayerRole, Vec2> {
   }
 
   const span = Math.max(1, next.t - previous.t);
-  const amount = smoothstep(Math.min(1, Math.max(0, (elapsed - previous.t) / span)));
+  const amount = Math.min(1, Math.max(0, (elapsed - previous.t) / span));
   const positions = {} as Record<PlayerRole, Vec2>;
   for (const role of Object.keys(INITIAL_POSITIONS) as PlayerRole[]) {
     positions[role] = lerpVec(previous.positions[role], next.positions[role], amount);
@@ -181,28 +309,30 @@ function samplePositions(elapsed: number): Record<PlayerRole, Vec2> {
   return positions;
 }
 
-function buildFrames(): ScenarioFrame[] {
+function buildFrames(scenario: ScenarioConfig): ScenarioFrame[] {
   const frames: ScenarioFrame[] = [{ t: 0, positions: INITIAL_POSITIONS, markers: {} }];
   let previous = INITIAL_POSITIONS;
   let previousWasKickBait = false;
 
   for (let round = 1; round <= TOWER_ROUNDS; round++) {
     const spawnAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS;
+    const moveStartAt = spawnAt + (round === 1 ? INITIAL_MOVE_DELAY_MS : 0);
     if (round === 1) {
-      frames.push({ t: spawnAt, positions: INITIAL_POSITIONS, markers: INITIAL_MARKERS });
+      frames.push({ t: spawnAt, positions: INITIAL_POSITIONS, markers: scenario.initialMarkers });
+      frames.push({ t: moveStartAt, positions: INITIAL_POSITIONS, markers: scenario.initialMarkers });
     }
-    const positions = getRoundPositions(round);
-    const settleAt = spawnAt + (previousWasKickBait ? MOVE_SETTLE_MS + 1400 : MOVE_SETTLE_MS);
-    frames.push({ t: settleAt, positions, markers: getRoundMarkers(round) });
-    frames.push({ t: spawnAt + TOWER_ACTIVATE_MS + AOE_SHOW_MS, positions, markers: getRoundMarkers(round) });
+    const positions = getRoundPositions(round, scenario, previous);
+    const settleAt = moveStartAt + (previousWasKickBait ? MOVE_SETTLE_MS + 1400 : MOVE_SETTLE_MS);
+    frames.push({ t: settleAt, positions, markers: getRoundMarkers(round, scenario) });
+    frames.push({ t: spawnAt + TOWER_ACTIVATE_MS + AOE_SHOW_MS, positions, markers: getRoundMarkers(round, scenario) });
     previous = positions;
     previousWasKickBait = false;
 
     if (round % 2 === 0) {
       const baitArriveAt = spawnAt + TOWER_ACTIVATE_MS + AOE_SHOW_MS + MOVE_SETTLE_MS;
-      const baitPositions = getKickBaitPositions(round, positions);
-      frames.push({ t: baitArriveAt, positions: baitPositions, markers: getRoundMarkers(round) });
-      frames.push({ t: baitArriveAt + 1200, positions: baitPositions, markers: getRoundMarkers(round) });
+      const baitPositions = getKickBaitPositions(round, positions, scenario);
+      frames.push({ t: baitArriveAt, positions: baitPositions, markers: getRoundMarkers(round, scenario) });
+      frames.push({ t: baitArriveAt + 1200, positions: baitPositions, markers: getRoundMarkers(round, scenario) });
       previous = baitPositions;
       previousWasKickBait = true;
     }
@@ -212,36 +342,98 @@ function buildFrames(): ScenarioFrame[] {
   return frames.sort((a, b) => a.t - b.t);
 }
 
-function getRoundPositions(round: number): Record<PlayerRole, Vec2> {
-  const towers = getTowerPair(round);
+function getRoundPositions(round: number, scenario: ScenarioConfig, currentPositions: Record<PlayerRole, Vec2>): Record<PlayerRole, Vec2> {
+  const towers = getTowerPair(round, scenario);
   const left = towers[0];
   const right = towers[1];
-  const positions = { ...INITIAL_POSITIONS };
-  const activeGroup = isGroupOneRound(round) ? 1 : 2;
-  const activePlayers = PLAYERS.filter((player) => player.group === activeGroup);
-  const inactivePlayers = PLAYERS.filter((player) => player.group !== activeGroup);
+  const markers = getRoundMarkers(round, scenario);
+  const input = {
+    round,
+    leftTower: left,
+    rightTower: right,
+    markers,
+    currentPositions,
+    groupOneRoles: scenario.groupOneRoles
+  };
+  const markerCounts = scenario.markerCountsByRound[round];
+  return getMissingStrategyPositions(markerCounts ? { ...input, markerCounts } : input) as Record<PlayerRole, Vec2>;
+}
 
-  if (round % 2 === 1) {
-    const shares = activePlayers.filter((player) => getRoundMarkers(round)[player.role] === "share");
-    const spread = activePlayers.find((player) => getRoundMarkers(round)[player.role] === "spread");
-    const cone = activePlayers.find((player) => getRoundMarkers(round)[player.role] === "cone");
-    if (shares[0]) positions[shares[0].role] = towerPoint(left, "center");
-    if (shares[1]) positions[shares[1].role] = towerPoint(right, "inner");
-    if (cone) positions[cone.role] = towerPoint(left, "outerEdge");
-    if (spread) positions[spread.role] = towerPoint(right, "outer");
-  } else {
-    const cones = activePlayers.filter((player) => getRoundMarkers(round)[player.role] === "cone");
-    const spreads = activePlayers.filter((player) => getRoundMarkers(round)[player.role] === "spread");
-    const leftCone = bossTowerSideIntersection(left, "left");
-    const rightCone = bossTowerSideIntersection(right, "right");
-    if (cones[0]) positions[cones[0].role] = leftCone;
-    if (spreads[0]) positions[spreads[0].role] = towerClockPoint(left, leftCone, 6, false);
-    if (cones[1]) positions[cones[1].role] = rightCone;
-    if (spreads[1]) positions[spreads[1].role] = towerClockPoint(right, rightCone, 6, false);
+function placeActiveTowerPlayers(
+  positions: Record<PlayerRole, Vec2>,
+  activePlayers: ScenarioPlayer[],
+  markers: Partial<Record<PlayerRole, MarkerType>>,
+  sideAssignments: Partial<Record<PlayerRole, "left" | "right">>,
+  left: Vec2,
+  right: Vec2
+) {
+  for (const side of ["left", "right"] as const) {
+    const tower = side === "left" ? left : right;
+    const players = activePlayers
+      .filter((player) => sideAssignments[player.role] === side)
+      .sort((a, b) => MARKER_ORDER.indexOf(markers[a.role] ?? "spread") - MARKER_ORDER.indexOf(markers[b.role] ?? "spread"));
+    players.forEach((player, index) => {
+      positions[player.role] = towerOwnerPoint(tower, index);
+    });
+  }
+}
+
+function placeSupportPlayers(
+  positions: Record<PlayerRole, Vec2>,
+  activePlayers: ScenarioPlayer[],
+  inactivePlayers: ScenarioPlayer[],
+  markers: Partial<Record<PlayerRole, MarkerType>>,
+  sideAssignments: Partial<Record<PlayerRole, "left" | "right">>,
+  left: Vec2,
+  right: Vec2
+) {
+  const freeRoles = inactivePlayers.map((player) => player.role);
+  const takeFreeRole = () => freeRoles.shift();
+
+  for (const side of ["left", "right"] as const) {
+    const tower = side === "left" ? left : right;
+    const towerPlayers = activePlayers
+      .filter((player) => sideAssignments[player.role] === side)
+      .sort((a, b) => MARKER_ORDER.indexOf(markers[a.role] ?? "spread") - MARKER_ORDER.indexOf(markers[b.role] ?? "spread"));
+
+    towerPlayers.forEach((player, index) => {
+      const marker = markers[player.role];
+      if (marker !== "share") {
+        return;
+      }
+      const helpersNeeded = 2;
+      for (let helperIndex = 0; helperIndex < helpersNeeded; helperIndex++) {
+        const role = takeFreeRole();
+        if (!role) {
+          return;
+        }
+        positions[role] = towerSupportPoint(tower, index, helperIndex);
+      }
+    });
   }
 
-  placeInactivePlayers(positions, inactivePlayers, left, right, round);
-  return positions;
+  for (const side of ["left", "right"] as const) {
+    const tower = side === "left" ? left : right;
+    const towerPlayers = activePlayers
+      .filter((player) => sideAssignments[player.role] === side)
+      .sort((a, b) => MARKER_ORDER.indexOf(markers[a.role] ?? "spread") - MARKER_ORDER.indexOf(markers[b.role] ?? "spread"));
+
+    towerPlayers.forEach((player, index) => {
+      const marker = markers[player.role];
+      if (marker !== "cone") {
+        return;
+      }
+      const role = takeFreeRole();
+      if (!role) {
+        return;
+      }
+      positions[role] = towerConeBaitPoint(tower, index);
+    });
+  }
+
+  for (const role of freeRoles) {
+    positions[role] = safeIdlePoint(role);
+  }
 }
 
 function placeInactivePlayers(
@@ -259,8 +451,8 @@ function placeInactivePlayers(
   const dealers = players.filter((player) => player.role.startsWith("D"));
 
   if (round % 2 === 1) {
-    const tankSpot = betweenTowersAtCenterDistance(left, right, 5, 0.01);
-    const dealerSpot = betweenTowersAtCenterDistance(right, left, 4);
+    const tankSpot = betweenTowersAtCenterDistance(left, right, 8, 0.3);
+    const dealerSpot = betweenTowersAtCenterDistance(right, left, 6, 0.3);
     for (const dealer of dealers) {
       positions[dealer.role] = dealerSpot;
     }
@@ -281,22 +473,137 @@ function placeInactivePlayers(
   for (const melee of melees) {
     positions[melee.role] = meleeSpot;
   }
-  const leftCone = bossTowerSideIntersection(left, "left");
-  const rightCone = bossTowerSideIntersection(right, "right");
   for (const healer of healers) {
-    positions[healer.role] = towerClockPoint(left, leftCone, 9, true, 0.75);
+    positions[healer.role] = bossClockPointFromSix(between, 9, WAYMARK_INNER_DISTANCE);
   }
   for (const ranged of rangeds) {
-    positions[ranged.role] = towerClockPoint(right, rightCone, 3, true);
+    positions[ranged.role] = bossClockPointFromSix(between, 3, WAYMARK_INNER_DISTANCE);
   }
 }
 
-function getKickBaitPositions(round: number, current: Record<PlayerRole, Vec2>): Record<PlayerRole, Vec2> {
+function buildScenarioSideAssignments(
+  roles: PlayerRole[],
+  markers: Partial<Record<PlayerRole, MarkerType>>,
+  scenario: ScenarioConfig,
+  round: number,
+  currentPositions: Record<PlayerRole, Vec2>,
+  left: Vec2,
+  right: Vec2
+): Partial<Record<PlayerRole, "left" | "right">> {
+  const assignments: Partial<Record<PlayerRole, "left" | "right">> = {};
+  const counts: Record<"left" | "right", number> = { left: 0, right: 0 };
+  const markerCounts: Partial<Record<PlayerRole, number>> = scenario.markerCountsByRound[round] ?? {};
+  const entries = roles
+    .map((role) => ({ role, marker: markers[role], position: currentPositions[role], markerCount: markerCounts[role] ?? 1 }))
+    .filter((entry): entry is { role: PlayerRole; marker: MarkerType; position: Vec2; markerCount: number } => Boolean(entry.marker && entry.position));
+
+  const assign = (role: PlayerRole, preferred: "left" | "right") => {
+    if (assignments[role]) return;
+    const fallback = preferred === "left" ? "right" : "left";
+    const side = counts[preferred] < 2 ? preferred : fallback;
+    assignments[role] = side;
+    counts[side] += 1;
+  };
+
+  for (const marker of MARKER_ORDER) {
+    const sameMarker = entries.filter((entry) => entry.marker === marker);
+    if (sameMarker.length === 0) continue;
+
+    const initial = sameMarker.every((entry) => entry.markerCount <= 1);
+    if (initial) {
+      const sorted = [...sameMarker].sort((a, b) => INITIAL_LEFT_PRIORITY.indexOf(a.role) - INITIAL_LEFT_PRIORITY.indexOf(b.role));
+      sorted.forEach((entry, index) => {
+        if (sameMarker.length === 1) {
+          assign(entry.role, MARKER_DEFAULT_SIDE[marker]);
+          return;
+        }
+        assign(entry.role, index === 0 ? "left" : index === 1 ? "right" : sideWithRoom(counts));
+      });
+      continue;
+    }
+
+    const sideGroups = new Map<"left" | "right", typeof sameMarker>();
+    for (const entry of sameMarker) {
+      const side = currentTowerSide(entry.position, left, right);
+      sideGroups.set(side, [...(sideGroups.get(side) ?? []), entry]);
+    }
+
+    for (const side of ["left", "right"] as const) {
+      const groupEntries = sideGroups.get(side) ?? [];
+      if (groupEntries.length === 0) continue;
+      if (groupEntries.length === 1) {
+        const only = groupEntries[0];
+        if (only) assign(only.role, side);
+        continue;
+      }
+      const sortedByDistance = [...groupEntries].sort((a, b) => distance2D(a.position, { x: 0, z: 0 }) - distance2D(b.position, { x: 0, z: 0 }));
+      const opposite = side === "left" ? "right" : "left";
+      sortedByDistance.forEach((entry, index) => {
+        assign(entry.role, index === sortedByDistance.length - 1 ? opposite : side);
+      });
+    }
+  }
+
+  for (const entry of entries) {
+    assign(entry.role, MARKER_DEFAULT_SIDE[entry.marker]);
+  }
+
+  return assignments;
+}
+
+function currentTowerSide(position: Vec2, left: Vec2, right: Vec2): "left" | "right" {
+  const midpoint = scale(add(left, right), 0.5);
+  const forwardToBoss = normalize(scale(midpoint, -1));
+  const leftAxis = { x: -forwardToBoss.z, z: forwardToBoss.x };
+  return dot(position, leftAxis) < 0 ? "left" : "right";
+}
+
+function sideWithRoom(counts: Record<"left" | "right", number>): "left" | "right" {
+  return counts.left <= counts.right ? "left" : "right";
+}
+
+function towerOwnerPoint(tower: Vec2, slotIndex: number): Vec2 {
+  const radial = towerRadial(tower, slotIndex);
+  return add(tower, scale(radial, TOWER_RADIUS - 0.55));
+}
+
+function towerSupportPoint(tower: Vec2, slotIndex: number, helperIndex: number): Vec2 {
+  const radial = towerRadial(tower, slotIndex);
+  const tangent = { x: -radial.z, z: radial.x };
+  const side = helperIndex === 0 ? -1 : 1;
+  return add(tower, add(scale(radial, TOWER_RADIUS + 0.45), scale(tangent, side * 0.65)));
+}
+
+function towerConeBaitPoint(tower: Vec2, slotIndex: number): Vec2 {
+  const radial = towerRadial(tower, slotIndex);
+  return add(tower, scale(radial, TOWER_RADIUS + 0.8));
+}
+
+function safeIdlePoint(role: PlayerRole): Vec2 {
+  const offsets: Record<PlayerRole, Vec2> = {
+    MT: { x: -1.2, z: -0.8 },
+    ST: { x: -0.4, z: -0.8 },
+    H1: { x: 0.4, z: -0.8 },
+    H2: { x: 1.2, z: -0.8 },
+    D1: { x: -1.2, z: 0.8 },
+    D2: { x: -0.4, z: 0.8 },
+    D3: { x: 0.4, z: 0.8 },
+    D4: { x: 1.2, z: 0.8 }
+  };
+  return offsets[role];
+}
+
+function towerRadial(tower: Vec2, slotIndex: number): Vec2 {
+  const outward = normalize(tower);
+  return slotIndex % 2 === 0 ? outward : scale(outward, -1);
+}
+
+function getKickBaitPositions(round: number, current: Record<PlayerRole, Vec2>, scenario: ScenarioConfig): Record<PlayerRole, Vec2> {
   const positions = { ...current };
-  const cast = getEvenRoundCast(round);
+  const cast = getEvenRoundCast(round, scenario);
   const nextRound = Math.min(TOWER_ROUNDS, round + 1);
   const towerMid = scale(
-    getTowerPair(nextRound).reduce((sum, tower) => add(sum, tower), { x: 0, z: 0 }),
+    getTowerPair(nextRound, scenario).reduce((sum, tower) => add(sum, tower), { x: 0, z: 0 }),
     0.5
   );
   const baitDirection = cast === "past" ? normalize(towerMid) : scale(normalize(towerMid), -1);
@@ -307,40 +614,28 @@ function getKickBaitPositions(round: number, current: Record<PlayerRole, Vec2>):
   return positions;
 }
 
-function getMarkers(elapsed: number): Partial<Record<PlayerRole, MarkerType>> {
+function getMarkers(elapsed: number, scenario: ScenarioConfig): Partial<Record<PlayerRole, MarkerType>> {
   if (elapsed < MISSING_CAST_MS) {
     return {};
   }
   if (elapsed < MISSING_CAST_MS + 5000) {
-    return INITIAL_MARKERS;
+    return scenario.initialMarkers;
   }
 
   for (let round = 1; round <= TOWER_ROUNDS; round++) {
     const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
     if (elapsed >= activateAt && elapsed < activateAt + 5000) {
-      return POST_ROUND_MARKERS[round] ?? {};
+      return getRoundMarkers(round + 1, scenario);
     }
   }
   return {};
 }
 
-function getRoundMarkers(round: number): Partial<Record<PlayerRole, MarkerType>> {
-  const groupOneOdd: Partial<Record<PlayerRole, MarkerType>> = { MT: "share", H1: "spread", D2: "share", D4: "cone" };
-  const groupOneEven: Partial<Record<PlayerRole, MarkerType>> = { MT: "cone", H1: "spread", D2: "cone", D4: "spread" };
-  const groupTwoInitial: Partial<Record<PlayerRole, MarkerType>> = { ST: "spread", H2: "spread", D1: "cone", D3: "cone" };
-  const groupTwoOdd: Partial<Record<PlayerRole, MarkerType>> = { ST: "share", H2: "spread", D1: "share", D3: "cone" };
-  const groupTwoEven: Partial<Record<PlayerRole, MarkerType>> = { ST: "cone", H2: "spread", D1: "cone", D3: "spread" };
-
-  if (isGroupOneRound(round)) {
-    return round % 2 === 1 ? groupOneOdd : groupOneEven;
-  }
-  if (round === 4) {
-    return groupTwoInitial;
-  }
-  return round % 2 === 1 ? groupTwoOdd : groupTwoEven;
+function getRoundMarkers(round: number, scenario: ScenarioConfig): Partial<Record<PlayerRole, MarkerType>> {
+  return scenario.roundMarkers[round] ?? {};
 }
 
-function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>): AoeView[] {
+function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>, scenario: ScenarioConfig): AoeView[] {
   if (elapsed >= MISSING_CAST_MS && elapsed <= MISSING_CAST_MS + AOE_SHOW_MS) {
     return [
       {
@@ -397,7 +692,7 @@ function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>): AoeView[
     return [];
   }
 
-  const markers = getRoundMarkers(round);
+  const markers = getRoundMarkers(round, scenario);
 
   if (round % 2 === 0) {
     for (const role of nearestRolesToBoss(positions, 4)) {
@@ -449,7 +744,7 @@ function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>): AoeView[
   return aoes;
 }
 
-function getTowers(elapsed: number): TowerView[] {
+function getTowers(elapsed: number, scenario: ScenarioConfig): TowerView[] {
   const round = getRound(elapsed);
   if (round === 0) {
     return [];
@@ -458,7 +753,7 @@ function getTowers(elapsed: number): TowerView[] {
   if (elapsed < spawnAt || elapsed > spawnAt + TOWER_ACTIVATE_MS + 900) {
     return [];
   }
-  return getTowerPair(round).map((tower, index) => ({
+  return getTowerPair(round, scenario).map((tower, index) => ({
     id: `guide-tower-${round}-${index}`,
     x: tower.x,
     z: tower.z,
@@ -466,19 +761,15 @@ function getTowers(elapsed: number): TowerView[] {
   }));
 }
 
-function getTowerPair(round: number): [Vec2, Vec2] {
-  const base = 3;
-  const shift = round - 1;
-  const first = directionToPosition(base + shift, TOWER_DISTANCE);
-  const second = directionToPosition(base + 2 + shift, TOWER_DISTANCE);
+function getTowerPair(round: number, scenario: ScenarioConfig): [Vec2, Vec2] {
+  const shift = (round - 1) * scenario.rotationDirection;
+  const first = directionToPosition(scenario.baseIndex + shift, TOWER_DISTANCE);
+  const second = directionToPosition(scenario.baseIndex + 2 + shift, TOWER_DISTANCE);
   return sortTowersByBossFacingLeftRight(first, second);
 }
 
 function sortTowersByBossFacingLeftRight(a: Vec2, b: Vec2): [Vec2, Vec2] {
-  const midpoint = scale(add(a, b), 0.5);
-  const forwardToBoss = normalize(scale(midpoint, -1));
-  const leftSide = { x: -forwardToBoss.z, z: forwardToBoss.x };
-  return dot(a, leftSide) < dot(b, leftSide) ? [a, b] : [b, a];
+  return sortMissingTowersByBossFacingLeftRight(a, b);
 }
 
 function getRound(elapsed: number): number {
@@ -488,7 +779,7 @@ function getRound(elapsed: number): number {
   return Math.min(TOWER_ROUNDS, Math.max(1, Math.floor((elapsed - MISSING_CAST_MS) / TOWER_INTERVAL_MS) + 1));
 }
 
-function getBossCast(elapsed: number): "" | "missing" | "future" | "past" {
+function getBossCast(elapsed: number, scenario: ScenarioConfig): "" | "missing" | "future" | "past" {
   if (elapsed < MISSING_CAST_MS) {
     return "missing";
   }
@@ -497,28 +788,156 @@ function getBossCast(elapsed: number): "" | "missing" | "future" | "past" {
   if (round % 2 !== 0 || elapsed < spawnAt || elapsed > spawnAt + BOSS_CAST_MS) {
     return "";
   }
-  return getEvenRoundCast(round);
+  return getEvenRoundCast(round, scenario);
 }
 
-function getEvenRoundCast(round: number): "future" | "past" {
-  return round % 4 === 0 ? "future" : "past";
+function getEvenRoundCast(round: number, scenario: ScenarioConfig): "future" | "past" {
+  return scenario.evenCasts[round] ?? "future";
 }
 
-function getLogs(elapsed: number): string[] {
+function getScenarioValidation(elapsed: number, scenario: ScenarioConfig): ScenarioValidation {
+  const results: RoundValidation[] = [];
+  for (let round = 1; round <= TOWER_ROUNDS; round++) {
+    const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
+    if (elapsed < activateAt) {
+      break;
+    }
+    results.push(validateRound(round, scenario));
+  }
+  return {
+    failed: results.some((result) => !result.ok),
+    completedRounds: results.length,
+    results
+  };
+}
+
+function validateRound(round: number, scenario: ScenarioConfig): RoundValidation {
+  const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
+  const positions = samplePositions(activateAt, scenario);
+  const towers = getTowerPair(round, scenario);
+  const markers = getRoundMarkers(round, scenario);
+  const messages: string[] = [];
+  const all = PLAYERS.map((player) => ({
+    id: player.id,
+    role: player.role,
+    position: positions[player.role],
+    marker: markers[player.role]
+  }));
+  const towerOccupants = towers.map((tower) =>
+    all.filter((entry) => isInCircle(entry.position.x, entry.position.z, tower.x, tower.z, TOWER_RADIUS))
+  );
+  const towerSideByRole = new Map<PlayerRole, TowerSide>();
+
+  towerOccupants.forEach((occupants, index) => {
+    const side = towerSideLabel(index);
+    for (const occupant of occupants) {
+      towerSideByRole.set(occupant.role, side);
+    }
+    if (occupants.length !== TOWER_REQUIRED_OCCUPANTS) {
+      messages.push(`${round}번 ${side} 인원 ${occupants.length}명 (${rolesText(occupants)} / 2명 필요)`);
+    }
+  });
+
+  const towerRoles = new Set<PlayerRole>();
+  for (const occupants of towerOccupants) {
+    for (const occupant of occupants) {
+      towerRoles.add(occupant.role);
+    }
+  }
+  const towerPlayers = all.filter((entry) => towerRoles.has(entry.role));
+
+  type Region =
+    | { type: "circle"; ownerRole: PlayerRole; side: TowerSide; cx: number; cz: number; radius: number }
+    | { type: "cone"; ownerRole: PlayerRole; side: TowerSide; cx: number; cz: number; dir: number };
+  const regions: Region[] = [];
+
+  for (const owner of towerPlayers) {
+    const marker = owner.marker;
+    const side = towerSideByRole.get(owner.role);
+    if (!marker || !side) {
+      continue;
+    }
+    if (marker === "share") {
+      const count = all.filter((entry) =>
+        isInCircle(entry.position.x, entry.position.z, owner.position.x, owner.position.z, SHARE_RADIUS)
+      ).length;
+      regions.push({ type: "circle", ownerRole: owner.role, side, cx: owner.position.x, cz: owner.position.z, radius: SHARE_RADIUS });
+      if (count !== SHARE_REQUIRED) {
+        messages.push(`${round}번 ${side} 쉐어징(${owner.role}) 인원 ${count}명 (3명 필요)`);
+      }
+      continue;
+    }
+    if (marker === "spread") {
+      const extras = all.filter((entry) =>
+        entry.role !== owner.role && isInCircle(entry.position.x, entry.position.z, owner.position.x, owner.position.z, SPREAD_RADIUS)
+      );
+      regions.push({ type: "circle", ownerRole: owner.role, side, cx: owner.position.x, cz: owner.position.z, radius: SPREAD_RADIUS });
+      if (extras.length > 0) {
+        messages.push(`${round}번 ${side} 산개징(${owner.role})에 ${extras.length}명 추가 피격: ${rolesText(extras)}`);
+      }
+      continue;
+    }
+
+    const target = nearestPosition(owner.role, positions);
+    regions.push({
+      type: "cone",
+      ownerRole: owner.role,
+      side,
+      cx: owner.position.x,
+      cz: owner.position.z,
+      dir: target ? Math.atan2(target.x - owner.position.x, target.z - owner.position.z) : 0
+    });
+  }
+
+  for (const entry of all) {
+    let hits = 0;
+    const sides = new Set<TowerSide>();
+    for (const region of regions) {
+      if (region.type === "circle") {
+        if (isInCircle(entry.position.x, entry.position.z, region.cx, region.cz, region.radius)) {
+          hits += 1;
+          sides.add(region.side);
+        }
+      } else if (entry.role !== region.ownerRole && isInCone(entry.position.x, entry.position.z, region.cx, region.cz, region.dir, CONE_ANGLE, CONE_RANGE)) {
+        hits += 1;
+        sides.add(region.side);
+      }
+    }
+    if (hits >= 2) {
+      messages.push(`${round}번 ${Array.from(sides).join("/")} 범위 중첩: ${entry.role} ${hits}개 피격`);
+    }
+  }
+
+  return {
+    round,
+    ok: messages.length === 0,
+    messages
+  };
+}
+
+function getLogs(elapsed: number, scenario: ScenarioConfig, validation: ScenarioValidation): string[] {
   const round = getRound(elapsed);
-  const cast = getBossCast(elapsed);
+  const cast = getBossCast(elapsed, scenario);
   if (cast === "missing") {
     return ["[자동 공략] 보스 캐스팅: 행방불명", "[자동 공략] 광역 후 초기 머리징을 확인합니다."];
   }
-  return [
-    "[자동 공략] 고정 패턴: MT/H1/D2/D4 = 1조, ST/H2/D1/D3 = 2조",
-    `[자동 공략] ${round}번 탑 처리 중 (${isGroupOneRound(round) ? "1조" : "2조"})`,
+  const logs = [
+    `[자동 공략] 랜덤 패턴: 시작 ${directionName(scenario.baseIndex)} / ${scenario.rotationDirection === 1 ? "시계" : "반시계"} 회전`,
+    `[자동 공략] ${round}번 탑 처리 중 (${rolesText(getMissingActiveRolesForRound(round, scenario.groupOneRoles).map((role) => ({ role })))})`,
     cast ? `[자동 공략] 보스 캐스팅: ${cast === "future" ? "미래의 종언" : "과거의 종언"}` : "[자동 공략] 탑 처리 위치 확인"
   ];
-}
-
-function isGroupOneRound(round: number): boolean {
-  return round === 1 || round === 2 || round === 3 || round === 8;
+  for (const result of validation.results) {
+    if (result.ok) {
+      logs.push(`[공략 판정] ${result.round}번 탑 성공`);
+      continue;
+    }
+    logs.push(`[공략 판정] ${result.round}번 탑 실패`);
+    logs.push(...result.messages.map((message) => `[공략 판정] ${message}`));
+  }
+  if (validation.completedRounds === TOWER_ROUNDS && !validation.failed) {
+    logs.push("[공략 판정] 행방불명 처리 성공");
+  }
+  return logs.slice(-12);
 }
 
 function towerPoint(
@@ -540,11 +959,11 @@ function towerPoint(
     case "center":
       return tower;
     case "inner":
-      return add(tower, scale(inward, 1.6));
+      return add(tower, scale(inward, 3.5));
     case "outer":
-      return add(tower, scale(outward, 2.2));
+      return add(tower, scale(outward, 3.6));
     case "outerEdge":
-      return add(tower, scale(outward, TOWER_RADIUS - 0.05));
+      return add(tower, scale(outward, TOWER_RADIUS - 0.45));
     case "outerInner":
       return add(tower, scale(outward, 1.15));
     case "oppositeOuter":
@@ -558,14 +977,20 @@ function towerPoint(
   }
 }
 
-function bossClockPointFromSix(sixDirection: Vec2, hour: 1 | 11): Vec2 {
+function bossClockPointFromSix(sixDirection: Vec2, hour: 1 | 3 | 9 | 11, distance = BOSS_RADIUS + 0.35): Vec2 {
   const six = normalize(sixDirection);
   const twelve = scale(six, -1);
   const right = { x: -twelve.z, z: twelve.x };
+  if (hour === 3) {
+    return scale(right, distance);
+  }
+  if (hour === 9) {
+    return scale(right, -distance);
+  }
   const amount = Math.PI / 6;
   const sign = hour === 1 ? 1 : -1;
   const direction = add(scale(twelve, Math.cos(amount)), scale(right, Math.sin(amount) * sign));
-  return scale(normalize(direction), BOSS_RADIUS + 0.35);
+  return scale(normalize(direction), distance);
 }
 
 function bossTowerSideIntersection(tower: Vec2, sideName: "left" | "right"): Vec2 {
@@ -664,12 +1089,44 @@ function spreadOffset(role: PlayerRole): Vec2 {
   return offsets[role];
 }
 
+function shuffle<T>(array: T[]): T[] {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const a = copy[i];
+    const b = copy[j];
+    if (a !== undefined && b !== undefined) {
+      copy[i] = b;
+      copy[j] = a;
+    }
+  }
+  return copy;
+}
+
+function directionName(index: number): string {
+  const names = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"];
+  return names[((index % DIRECTION_COUNT) + DIRECTION_COUNT) % DIRECTION_COUNT] ?? "랜덤";
+}
+
+function towerSideLabel(index: number): TowerSide {
+  return index === 0 ? "왼쪽탑" : "오른쪽탑";
+}
+
+function rolesText(entries: { role: PlayerRole }[]): string {
+  return entries.map((entry) => entry.role).join(", ") || "없음";
+}
+
 function add(a: Vec2, b: Vec2): Vec2 {
   return { x: a.x + b.x, z: a.z + b.z };
 }
 
 function scale(a: Vec2, amount: number): Vec2 {
   return { x: a.x * amount, z: a.z * amount };
+}
+
+function movePointToward(point: Vec2, target: Vec2, amount: number): Vec2 {
+  const direction = normalize({ x: target.x - point.x, z: target.z - point.z });
+  return add(point, scale(direction, amount));
 }
 
 function normalize(a: Vec2): Vec2 {
@@ -687,8 +1144,4 @@ function dot(a: Vec2, b: Vec2): number {
 
 function lerpVec(a: Vec2, b: Vec2, amount: number): Vec2 {
   return { x: a.x + (b.x - a.x) * amount, z: a.z + (b.z - a.z) * amount };
-}
-
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t);
 }

@@ -14,6 +14,7 @@ export class RaidRoomState extends Schema {
   @type("boolean") bossActive = false; // 보스(중앙) 표시 여부
   @type("string") bossCast = ""; // "" | "future" | "past"
   @type("number") elapsed = 0; // 기믹 시작 후 경과(ms)
+  @type("boolean") paused = false;
   @type({ map: TowerSchema }) towers = new MapSchema<TowerSchema>();
   @type([AoeSchema]) aoes = new ArraySchema<AoeSchema>();
   @type(["string"]) logs = new ArraySchema<string>();

@@ -269,7 +269,7 @@ pnpm dev:server
 권장 로컬 포트:
 
 ```txt
-web:    http://localhost:3000
+web:    http://localhost:3100
 server: ws://localhost:2567
 ```
 

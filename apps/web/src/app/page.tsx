@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
-import type { PlayerRole } from "@raid-simulator/shared";
+import { useEffect, useMemo, useState } from "react";
+import { isPlayerRole, type PlayerRole } from "@raid-simulator/shared";
 import { JoinPanel } from "@/features/simulator/components/JoinPanel";
 import { ConnectionOverlay } from "@/features/simulator/components/ConnectionOverlay";
 import { GimmickPanel } from "@/features/simulator/components/GimmickPanel";
@@ -16,6 +16,14 @@ const SimulatorCanvas = dynamic(
   () => import("@/features/simulator/components/SimulatorCanvas").then((module) => module.SimulatorCanvas),
   { ssr: false }
 );
+const GAME_SERVER_URL = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "ws://localhost:2567";
+const GAME_SERVER_HTTP_URL = GAME_SERVER_URL.replace(/^ws/, "http");
+const PHASE_LABEL: Record<string, string> = {
+  idle: "대기",
+  running: "진행 중",
+  success: "성공",
+  failed: "실패 포함"
+};
 
 export default function Home() {
   const { join, leave, sendInput, sendGimmick } = useRaidRoom();
@@ -25,21 +33,57 @@ export default function Home() {
   const selfName = useSimulatorStore((state) => state.selfName);
   const selfRole = useSimulatorStore((state) => state.selfRole);
   const players = useSimulatorStore((state) => state.players);
+  const gimmick = useSimulatorStore((state) => state.gimmick);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [scenarioMode, setScenarioMode] = useState(false);
   const [scenarioPaused, setScenarioPaused] = useState(false);
+  const [scenarioFocusRole, setScenarioFocusRole] = useState<PlayerRole | null>(null);
+  const [occupiedRoles, setOccupiedRoles] = useState<PlayerRole[]>([]);
 
   const isConnected = connectionStatus === "connected";
   const isInSimulator = isConnected || scenarioMode;
   const playerCount = useMemo(() => Object.keys(players).length, [players]);
 
-  useScenarioPlayback(scenarioMode, scenarioPaused);
+  useScenarioPlayback(scenarioMode, scenarioPaused, scenarioFocusRole);
   useKeyboardInput({ enabled: isConnected && !scenarioMode });
   usePrediction({ enabled: isConnected && !scenarioMode, sendInput });
+
+  useEffect(() => {
+    if (isInSimulator) {
+      return;
+    }
+
+    let cancelled = false;
+    async function loadOccupiedRoles() {
+      try {
+        const response = await fetch(`${GAME_SERVER_HTTP_URL}/state`, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("failed");
+        }
+        const data = (await response.json()) as { occupiedRoles?: unknown };
+        const nextRoles = Array.isArray(data.occupiedRoles) ? data.occupiedRoles.filter(isPlayerRole) : [];
+        if (!cancelled) {
+          setOccupiedRoles(nextRoles);
+        }
+      } catch {
+        if (!cancelled) {
+          setOccupiedRoles([]);
+        }
+      }
+    }
+
+    loadOccupiedRoles();
+    const interval = window.setInterval(loadOccupiedRoles, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isInSimulator]);
 
   async function handleJoin(name: string, role: PlayerRole) {
     setScenarioMode(false);
     setJoinError(null);
+    setScenarioFocusRole(null);
     try {
       await join({ name, role });
     } catch (error) {
@@ -51,6 +95,7 @@ export default function Home() {
     if (scenarioMode) {
       setScenarioMode(false);
       setScenarioPaused(false);
+      setScenarioFocusRole(null);
       return;
     }
     leave();
@@ -62,10 +107,12 @@ export default function Home() {
         <JoinPanel
           connectionStatus={connectionStatus}
           errorMessage={joinError ?? errorMessage}
+          occupiedRoles={occupiedRoles}
           onJoin={handleJoin}
-          onScenarioStart={() => {
+          onScenarioStart={(role) => {
             setJoinError(null);
             setScenarioPaused(false);
+            setScenarioFocusRole(role);
             setScenarioMode(true);
           }}
         />
@@ -77,7 +124,7 @@ export default function Home() {
     <main className="simulator-screen">
       <SimulatorCanvas />
       <ConnectionOverlay
-        name={scenarioMode ? "자동 공략" : selfName}
+        name={scenarioMode ? `${scenarioFocusRole ?? ""} 공략보기` : selfName}
         role={selfRole}
         sessionId={scenarioMode ? "scenario" : sessionId}
         playerCount={playerCount}
@@ -86,10 +133,31 @@ export default function Home() {
       />
       {!scenarioMode && <GimmickPanel onControl={sendGimmick} />}
       {scenarioMode && (
-        <div className="scenario-controls">
+        <div className="gimmick-panel scenario-panel">
+          <div className="gimmick-row">
+            <span className={`gimmick-status gimmick-status--${gimmick.phase}`}>
+              공략 보기 · {PHASE_LABEL[gimmick.phase] ?? gimmick.phase}
+              {gimmick.round > 0 ? ` · ${gimmick.round}번 탑` : ""}
+              {scenarioPaused ? " · 일시정지" : ""}
+            </span>
+          </div>
           <button className="scenario-button" type="button" onClick={() => setScenarioPaused((value) => !value)}>
             {scenarioPaused ? "재개" : "일시정지"}
           </button>
+          <div className="gimmick-logs">
+            {gimmick.logs.length === 0 ? (
+              <div className="gimmick-log-empty">로그 없음</div>
+            ) : (
+              gimmick.logs
+                .slice(-12)
+                .reverse()
+                .map((line, index) => (
+                  <div key={`${index}-${line}`} className={`gimmick-log${line.includes("실패") ? " is-fail" : ""}`}>
+                    {line}
+                  </div>
+                ))
+            )}
+          </div>
         </div>
       )}
     </main>
