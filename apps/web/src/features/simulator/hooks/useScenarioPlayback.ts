@@ -31,6 +31,7 @@ import {
   type PlayerSnapshot,
   sortMissingTowersByBossFacingLeftRight
 } from "@raid-simulator/shared";
+import type { PriorityMarkerType } from "@raid-simulator/shared";
 import { ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
 import { useSimulatorStore, type AoeView, type TowerView } from "../stores/simulatorStore";
 
@@ -40,7 +41,9 @@ type ScenarioConfig = {
   initialMarkers: Record<PlayerRole, MarkerType>;
   groupOneRoles: PlayerRole[];
   roundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>>;
+  postRoundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>>;
   markerCountsByRound: Record<number, Record<PlayerRole, number>>;
+  priorityMarkers: Partial<Record<PlayerRole, PriorityMarkerType>>;
   baseIndex: number;
   rotationDirection: 1 | -1;
   evenCasts: Record<number, "future" | "past">;
@@ -73,12 +76,10 @@ const PLAYERS: ScenarioPlayer[] = [
   { id: "guide-d4", name: "D4", role: "D4", marker: "cone" }
 ];
 
-const CLONE_BAIT_RADIUS = 2;
-const KICK_RANGE = 8;
-const KICK_ANGLE = Math.PI / 4;
+const CLONE_BAIT_RADIUS = 4.5;
 const INITIAL_MOVE_DELAY_MS = 1000;
 const MOVE_SETTLE_MS = 2200;
-const WAYMARK_INNER_DISTANCE = 11.4;
+const WAYMARK_INNER_DISTANCE = 11.65;
 const TOTAL_MS = MISSING_CAST_MS + (TOWER_ROUNDS - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS + 5000;
 const INITIAL_POSITIONS: Record<PlayerRole, Vec2> = {
   MT: { x: -4.5, z: 12.5 },
@@ -129,11 +130,13 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, focusRole
     let elapsed = 0;
     const tick = (time: number) => {
       if (!pausedRef.current) {
-        elapsed = (elapsed + Math.max(0, time - lastTime)) % TOTAL_MS;
+        elapsed = Math.min(TOTAL_MS, elapsed + Math.max(0, time - lastTime));
       }
       lastTime = time;
       updateScenario(elapsed, focusRole, pausedRef.current, scenario);
-      frame = window.requestAnimationFrame(tick);
+      if (pausedRef.current || elapsed < TOTAL_MS) {
+        frame = window.requestAnimationFrame(tick);
+      }
     };
 
     updateScenario(0, focusRole, pausedRef.current, scenario);
@@ -153,7 +156,9 @@ function createScenarioConfig(): ScenarioConfig {
   const markerCounts = Object.fromEntries(PLAYERS.map((player) => [player.role, 1])) as Record<PlayerRole, number>;
   const currentMarkers = { ...initialMarkers };
   const roundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>> = {};
+  const postRoundMarkers: Record<number, Partial<Record<PlayerRole, MarkerType>>> = {};
   const markerCountsByRound: Record<number, Record<PlayerRole, number>> = {};
+  let priorityMarkers: Partial<Record<PlayerRole, PriorityMarkerType>> = {};
 
   for (let round = 1; round <= TOWER_ROUNDS; round++) {
     const activeRoles = getMissingActiveRolesForRound(round, groupOneRoles);
@@ -161,6 +166,10 @@ function createScenarioConfig(): ScenarioConfig {
     const currentRoundMarkers = pickMarkers(currentMarkers, activeRoles);
     roundMarkers[round] = currentRoundMarkers;
     const nextMarkers = createNextMarkers(currentRoundMarkers, activeRoles, markerCounts);
+    postRoundMarkers[round] = nextMarkers;
+    if (round === 3) {
+      priorityMarkers = createFinalPriorityMarkers(nextMarkers, activeRoles);
+    }
     for (const role of activeRoles) {
       const marker = nextMarkers[role];
       if (marker) {
@@ -178,11 +187,34 @@ function createScenarioConfig(): ScenarioConfig {
     initialMarkers,
     groupOneRoles,
     roundMarkers,
+    postRoundMarkers,
     markerCountsByRound,
+    priorityMarkers,
     baseIndex: Math.floor(Math.random() * DIRECTION_COUNT),
     rotationDirection: Math.random() < 0.5 ? 1 : -1,
     evenCasts
   };
+}
+
+function createFinalPriorityMarkers(
+  markers: Partial<Record<PlayerRole, MarkerType>>,
+  roles: PlayerRole[]
+): Partial<Record<PlayerRole, PriorityMarkerType>> {
+  const priorityMarkers: Partial<Record<PlayerRole, PriorityMarkerType>> = {};
+  const cones = shuffle(roles.filter((role) => markers[role] === "cone"));
+  const spreads = shuffle(roles.filter((role) => markers[role] === "spread"));
+  const numberMarkers = ["number1", "number2"] as const;
+  const forbidMarkers = ["forbid1", "forbid2"] as const;
+
+  cones.forEach((role, index) => {
+    const marker = numberMarkers[index];
+    if (marker) priorityMarkers[role] = marker;
+  });
+  spreads.forEach((role, index) => {
+    const marker = forbidMarkers[index];
+    if (marker) priorityMarkers[role] = marker;
+  });
+  return priorityMarkers;
 }
 
 function createInitialMarkers(): Record<PlayerRole, MarkerType> {
@@ -244,6 +276,7 @@ function pickMarkers(
 function updateScenario(elapsed: number, focusRole: PlayerRole | null, paused: boolean, scenario: ScenarioConfig) {
   const positions = samplePositions(elapsed, scenario);
   const markers = getMarkers(elapsed, scenario);
+  const priorityMarkers = getPriorityMarkers(elapsed, scenario);
   const validation = getScenarioValidation(elapsed, scenario);
   const players: Record<string, PlayerSnapshot> = {};
   const actualPositions = {} as Record<PlayerRole, Vec2>;
@@ -264,7 +297,8 @@ function updateScenario(elapsed: number, focusRole: PlayerRole | null, paused: b
       rotation,
       lastSeq: 0,
       marker,
-      markerVisible: Boolean(marker)
+      markerVisible: Boolean(marker),
+      priorityMarker: priorityMarkers[player.role] ?? ""
     };
     players[player.id] = snapshot;
     ingestSnapshot(player.id, snapshot.x, snapshot.z, snapshot.rotation, 0);
@@ -353,7 +387,8 @@ function getRoundPositions(round: number, scenario: ScenarioConfig, currentPosit
     rightTower: right,
     markers,
     currentPositions,
-    groupOneRoles: scenario.groupOneRoles
+    groupOneRoles: scenario.groupOneRoles,
+    priorityMarkers: scenario.priorityMarkers
   };
   const markerCounts = scenario.markerCountsByRound[round];
   return getMissingStrategyPositions(markerCounts ? { ...input, markerCounts } : input) as Record<PlayerRole, Vec2>;
@@ -625,10 +660,19 @@ function getMarkers(elapsed: number, scenario: ScenarioConfig): Partial<Record<P
   for (let round = 1; round <= TOWER_ROUNDS; round++) {
     const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
     if (elapsed >= activateAt && elapsed < activateAt + 5000) {
-      return getRoundMarkers(round + 1, scenario);
+      return scenario.postRoundMarkers[round] ?? {};
     }
   }
   return {};
+}
+
+function getPriorityMarkers(elapsed: number, scenario: ScenarioConfig): Partial<Record<PlayerRole, PriorityMarkerType>> {
+  const roundThreeActivateAt = MISSING_CAST_MS + 2 * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
+  const roundEightActivateAt = MISSING_CAST_MS + 7 * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
+  if (elapsed < roundThreeActivateAt + 5000 || elapsed > roundEightActivateAt + AOE_SHOW_MS) {
+    return {};
+  }
+  return scenario.priorityMarkers;
 }
 
 function getRoundMarkers(round: number, scenario: ScenarioConfig): Partial<Record<PlayerRole, MarkerType>> {
@@ -659,8 +703,8 @@ function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>, scenario:
   const aoes: AoeView[] = [];
 
   if (round % 2 === 0) {
-    const kickAt = activateAt + AOE_SHOW_MS + MOVE_SETTLE_MS;
-    if (elapsed >= kickAt && elapsed <= kickAt + AOE_SHOW_MS) {
+    const cloneSpotAt = activateAt + AOE_SHOW_MS + MOVE_SETTLE_MS;
+    if (elapsed >= cloneSpotAt && elapsed <= cloneSpotAt + AOE_SHOW_MS) {
       for (const role of nearestRolesToBoss(positions, 4)) {
         const position = positions[role];
         aoes.push({
@@ -672,16 +716,6 @@ function getAoes(elapsed: number, positions: Record<PlayerRole, Vec2>, scenario:
           dir: 0,
           angle: 0,
           range: 0
-        });
-        aoes.push({
-          id: `guide-kick-${round}-${role}`,
-          kind: "kick",
-          x: position.x,
-          z: position.z,
-          radius: 0,
-          dir: Math.atan2(-position.x, -position.z),
-          angle: KICK_ANGLE,
-          range: KICK_RANGE
         });
       }
       return aoes;

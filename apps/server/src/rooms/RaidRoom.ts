@@ -11,6 +11,7 @@ const { Room } = colyseus;
 
 // 기믹 타임라인 진행용 틱 간격(ms). 이동은 명령 기반이라 이 틱은 시간 진행에만 쓴다.
 const GIMMICK_TICK_MS = 50;
+const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const occupiedHumanRoles = new Set<JoinOptions["role"]>();
 
 export function getOccupiedHumanRoles(): JoinOptions["role"][] {
@@ -20,6 +21,7 @@ export function getOccupiedHumanRoles(): JoinOptions["role"][] {
 export class RaidRoom extends Room<RaidRoomState> {
   private gimmick!: GimmickController;
   private bots!: BotController;
+  private lastInputAtByClient = new Map<string, number>();
 
   onCreate() {
     this.maxClients = 8;
@@ -34,6 +36,7 @@ export class RaidRoom extends Room<RaidRoomState> {
       if (!player || !isClientInput(payload)) {
         return;
       }
+      this.lastInputAtByClient.set(client.sessionId, Date.now());
 
       // 비정상/과도한 이동을 막기 위해 dt를 상한으로 클램프한다.
       const dt = typeof payload.dt === "number" ? Math.min(Math.max(payload.dt, 0), MAX_INPUT_DT) : 0;
@@ -77,6 +80,7 @@ export class RaidRoom extends Room<RaidRoomState> {
         this.bots.update(dt);
       }
       this.gimmick.update(dt);
+      this.disconnectIdleClients();
     }, GIMMICK_TICK_MS);
   }
 
@@ -98,11 +102,13 @@ export class RaidRoom extends Room<RaidRoomState> {
 
     this.state.players.set(client.sessionId, player);
     occupiedHumanRoles.add(joinOptions.role);
+    this.lastInputAtByClient.set(client.sessionId, Date.now());
   }
 
   onLeave(client: Client) {
     const player = this.state.players.get(client.sessionId);
     this.state.players.delete(client.sessionId);
+    this.lastInputAtByClient.delete(client.sessionId);
     if (player && isPlayerRole(player.role)) {
       occupiedHumanRoles.delete(player.role);
     }
@@ -110,6 +116,17 @@ export class RaidRoom extends Room<RaidRoomState> {
 
   onDispose() {
     occupiedHumanRoles.clear();
+    this.lastInputAtByClient.clear();
+  }
+
+  private disconnectIdleClients() {
+    const now = Date.now();
+    for (const client of this.clients) {
+      const lastInputAt = this.lastInputAtByClient.get(client.sessionId) ?? now;
+      if (now - lastInputAt >= IDLE_TIMEOUT_MS) {
+        client.leave(4000);
+      }
+    }
   }
 }
 

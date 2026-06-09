@@ -12,6 +12,7 @@ export class PlayerSchema extends Schema {
   // 머리징: "" | "share" | "spread" | "cone". markerVisible=false면 시각 표시만 숨김(판정은 유지).
   @type("string") marker = "";
   @type("boolean") markerVisible = false;
+  @type("string") priorityMarker = "";
   // 징 부여 횟수(최대 4회 제한 판정용).
   @type("number") markerCount = 0;
 }

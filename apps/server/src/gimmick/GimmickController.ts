@@ -34,10 +34,8 @@ type StartOptions = { stopOnFailure?: boolean };
 type TowerSide = "왼쪽탑" | "오른쪽탑";
 
 const MAX_LOGS = 50;
-const CLONE_BAIT_RADIUS = 2;
+const CLONE_BAIT_RADIUS = 4.5;
 const CLONE_SPOT_RADIUS = 0.42;
-const KICK_RANGE = 8;
-const KICK_ANGLE = Math.PI / 4;
 const KICK_BAIT_RESOLVE_DELAY_MS = 3200;
 
 export class GimmickController {
@@ -70,6 +68,9 @@ export class GimmickController {
 
     this.baseIndex = Math.floor(Math.random() * DIRECTION_COUNT);
     this.rotDir = Math.random() < 0.5 ? 1 : -1;
+    this.state.missingBaseIndex = this.baseIndex;
+    this.state.missingRotationDirection = this.rotDir;
+    this.state.lastEvenBossCast = "";
 
     this.buildTimeline();
     this.log("보스 캐스팅: 행방불명");
@@ -81,6 +82,7 @@ export class GimmickController {
     this.state.gimmickPhase = "idle";
     this.state.bossActive = false;
     this.state.bossCast = "";
+    this.state.lastEvenBossCast = "";
     this.state.round = 0;
     this.state.elapsed = 0;
     this.state.paused = false;
@@ -127,6 +129,7 @@ export class GimmickController {
     this.state.towers.clear();
     this.state.aoes.splice(0, this.state.aoes.length);
     this.state.logs.splice(0, this.state.logs.length);
+    this.state.lastEvenBossCast = "";
     this.clearAllMarkers();
   }
 
@@ -169,7 +172,7 @@ export class GimmickController {
       // 짝수 탑: 생성과 동시에 보스 미래/과거 캐스팅(5초).
       if (round % 2 === 0) {
         this.scheduleAt(spawnAt, () => this.startBossCast(round));
-        this.scheduleAt(activateAt + AOE_SHOW_MS + KICK_BAIT_RESOLVE_DELAY_MS, () => this.showKickBaitAoes(round));
+        this.scheduleAt(activateAt + AOE_SHOW_MS + KICK_BAIT_RESOLVE_DELAY_MS, () => this.showCloneSpots(round));
       }
       this.scheduleAt(activateAt, () => this.resolveRound(round));
     }
@@ -193,6 +196,7 @@ export class GimmickController {
     this.state.players.forEach((p) => {
       p.marker = "";
       p.markerVisible = false;
+      p.priorityMarker = "";
       p.markerCount = 0;
     });
   }
@@ -261,6 +265,7 @@ export class GimmickController {
   private startBossCast(round: number) {
     const cast = Math.random() < 0.5 ? "future" : "past";
     this.state.bossCast = cast;
+    this.state.lastEvenBossCast = cast;
     this.log(`보스 캐스팅: ${cast === "future" ? "미래의 종언" : "과거의 종언"}`);
     const castEndsAt = this.state.elapsed + BOSS_CAST_MS;
     this.scheduleAt(castEndsAt, () => {
@@ -282,7 +287,7 @@ export class GimmickController {
     });
   }
 
-  private showKickBaitAoes(round: number) {
+  private showCloneSpots(round: number) {
     if (round % 2 !== 0) {
       return;
     }
@@ -291,14 +296,15 @@ export class GimmickController {
       .slice(0, 4);
     for (const entry of players) {
       this.addAoe(this.makeCircleAoe("cloneSpot", entry.p.x, entry.p.z, CLONE_SPOT_RADIUS));
-      this.addAoe(this.makeCircleAoe("clone", entry.p.x, entry.p.z, CLONE_BAIT_RADIUS));
-      this.addAoe(this.makeConeAoe(entry.p.x, entry.p.z, Math.atan2(-entry.p.x, -entry.p.z), "kick"));
     }
-    this.log(`${round}번 탑 이후 분신/발차기 유도 표시`);
+    this.log(`${round}번 탑 이후 분신 위치 표시`);
   }
 
   private resolveRound(round: number) {
     const all = this.players();
+    if (round % 2 === 0) {
+      this.showCloneBaitCircles(all);
+    }
     const towers: TowerSchema[] = [];
     this.state.towers.forEach((t) => towers.push(t));
     const sortedTowers = sortTowersByBossFacingLeftRight(towers);
@@ -349,6 +355,13 @@ export class GimmickController {
     this.reassignMarkers(round, towerPlayers);
 
     this.log(`${round}번 탑 작동 / 머리징 공격·재부여 완료`);
+  }
+
+  private showCloneBaitCircles(all: { id: string; p: PlayerSchema }[]) {
+    const targets = [...all].sort((a, b) => Math.hypot(a.p.x, a.p.z) - Math.hypot(b.p.x, b.p.z)).slice(0, 4);
+    for (const target of targets) {
+      this.addAoe(this.makeCircleAoe("clone", target.p.x, target.p.z, CLONE_BAIT_RADIUS));
+    }
   }
 
   private resolveMarkerAttacks(
@@ -441,15 +454,15 @@ export class GimmickController {
     return aoe;
   }
 
-  private makeConeAoe(x: number, z: number, dir: number, kind: "cone" | "kick" = "cone"): AoeSchema {
+  private makeConeAoe(x: number, z: number, dir: number): AoeSchema {
     const aoe = new AoeSchema();
     aoe.id = this.nextId("aoe");
-    aoe.kind = kind;
+    aoe.kind = "cone";
     aoe.x = x;
     aoe.z = z;
     aoe.dir = dir;
-    aoe.angle = kind === "kick" ? KICK_ANGLE : CONE_ANGLE;
-    aoe.range = kind === "kick" ? KICK_RANGE : CONE_RANGE;
+    aoe.angle = CONE_ANGLE;
+    aoe.range = CONE_RANGE;
     return aoe;
   }
 
@@ -477,7 +490,26 @@ export class GimmickController {
     }
 
     const reassignedIds = shuffledTargets.map((e) => e.id);
-    this.scheduleAt(this.state.elapsed + MARKER_VISIBLE_MS, () => this.hideMarkers(reassignedIds));
+    this.scheduleAt(this.state.elapsed + MARKER_VISIBLE_MS, () => {
+      this.hideMarkers(reassignedIds);
+      if (round === 3) {
+        this.assignFinalPriorityMarkers(towerPlayers);
+      }
+    });
+  }
+
+  private assignFinalPriorityMarkers(towerPlayers: { id: string; p: PlayerSchema }[]) {
+    const cones = shuffle(towerPlayers.filter((e) => e.p.marker === "cone"));
+    const spreads = shuffle(towerPlayers.filter((e) => e.p.marker === "spread"));
+    const numberMarkers = ["number1", "number2"] as const;
+    const forbidMarkers = ["forbid1", "forbid2"] as const;
+
+    cones.forEach((entry, index) => {
+      entry.p.priorityMarker = numberMarkers[index] ?? "";
+    });
+    spreads.forEach((entry, index) => {
+      entry.p.priorityMarker = forbidMarkers[index] ?? "";
+    });
   }
 
   private failRound(reason: string) {
@@ -540,10 +572,6 @@ function nearestOther(
     }
   }
   return best;
-}
-
-function getEvenRoundCast(round: number): "future" | "past" {
-  return round % 4 === 0 ? "future" : "past";
 }
 
 function towerSideLabel(index: number): TowerSide {

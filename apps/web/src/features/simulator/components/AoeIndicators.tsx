@@ -12,19 +12,17 @@ export function AoeIndicators() {
         if (aoe.kind === "cloneSpot") {
           return <CloneSpot key={aoe.id} aoe={aoe} />;
         }
-        return aoe.kind === "cone" || aoe.kind === "kick" ? <ConeAoe key={aoe.id} aoe={aoe} /> : <CircleAoe key={aoe.id} aoe={aoe} />;
+        return aoe.kind === "cone" ? <ConeAoe key={aoe.id} aoe={aoe} /> : <CircleAoe key={aoe.id} aoe={aoe} />;
       })}
     </group>
   );
 }
 
 function CircleAoe({ aoe }: { aoe: AoeView }) {
-  const color = aoe.kind === "clone" ? "#9b7cff" : AOE_COLOR;
-  const opacity = aoe.kind === "clone" ? 0.24 : 0.42;
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[aoe.x, 0.08, aoe.z]}>
       <circleGeometry args={[aoe.radius, 48]} />
-      <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
+      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} />
     </mesh>
   );
 }
@@ -69,7 +67,7 @@ function ConeAoe({ aoe }: { aoe: AoeView }) {
 
   return (
     <mesh geometry={geometry} position={[aoe.x, 0.08, aoe.z]}>
-      <meshBasicMaterial color={aoe.kind === "kick" ? "#ff5f6d" : AOE_COLOR} transparent opacity={0.42} depthWrite={false} side={2} />
+      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} side={2} />
     </mesh>
   );
 }

@@ -2,6 +2,7 @@
 // "행방불명" 기믹 1단계(탑 + 머리징) 구현용. 분신/발차기는 2단계.
 
 export type MarkerType = "share" | "spread" | "cone";
+export type PriorityMarkerType = "number1" | "number2" | "forbid1" | "forbid2";
 export type BossCast = "" | "missing" | "future" | "past";
 export type GimmickPhase = "idle" | "running" | "success" | "failed";
 export type GimmickId = "missing";

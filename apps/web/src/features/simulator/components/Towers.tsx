@@ -1,4 +1,3 @@
-import { Html } from "@react-three/drei";
 import { MISSING_CAST_MS, TOWER_ACTIVATE_MS, TOWER_INTERVAL_MS, TOWER_RADIUS } from "@raid-simulator/shared";
 import { useSimulatorStore, type TowerView } from "../stores/simulatorStore";
 
@@ -31,9 +30,10 @@ function Tower({ tower, elapsed }: { tower: TowerView; elapsed: number }) {
         <circleGeometry args={[TOWER_RADIUS - 0.2, 48]} />
         <meshBasicMaterial color="#4dd2ff" transparent opacity={0.28} depthWrite={false} />
       </mesh>
-      <Html position={[0, 0.1, 0]} center distanceFactor={22}>
-        <div className="tower-label">{tower.round}</div>
-      </Html>
+      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.22, 24]} />
+        <meshBasicMaterial color="#4dd2ff" transparent opacity={0.95} depthWrite={false} />
+      </mesh>
     </group>
   );
 }

@@ -1,5 +1,5 @@
 import { Html } from "@react-three/drei";
-import { PLAYER_HEIGHT, type MarkerType, type PlayerSnapshot } from "@raid-simulator/shared";
+import { PLAYER_HEIGHT, type MarkerType, type PlayerSnapshot, type PriorityMarkerType } from "@raid-simulator/shared";
 
 type PlayerLabelProps = {
   player: PlayerSnapshot;
@@ -11,10 +11,28 @@ export function PlayerLabel({ player }: PlayerLabelProps) {
   return (
     <Html position={[0, PLAYER_HEIGHT + 0.65, 0]} center distanceFactor={18}>
       {marker && <MarkerIcon marker={marker} />}
+      {player.priorityMarker && <PriorityMarkerIcon marker={player.priorityMarker} />}
       <div className="player-label" title={player.name}>
         {player.role}
       </div>
     </Html>
+  );
+}
+
+function PriorityMarkerIcon({ marker }: { marker: PriorityMarkerType }) {
+  const number = marker.endsWith("1") ? "1" : "2";
+  if (marker.startsWith("number")) {
+    return (
+      <div className="priority-marker priority-marker--number" aria-label={`숫자징 ${number}`}>
+        {number}
+      </div>
+    );
+  }
+
+  return (
+    <div className="priority-marker priority-marker--forbid" aria-label={`금지징 ${number}`}>
+      <span>{number}</span>
+    </div>
   );
 }
 

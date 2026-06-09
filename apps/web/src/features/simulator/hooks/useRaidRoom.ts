@@ -51,7 +51,8 @@ export function useRaidRoom() {
           rotation: player.rotation,
           lastSeq,
           marker: readMarker(player.marker),
-          markerVisible: player.markerVisible === true
+          markerVisible: player.markerVisible === true,
+          priorityMarker: readPriorityMarker(player.priorityMarker)
         };
         ingestSnapshot(key, player.x, player.z, player.rotation, lastSeq);
       }
@@ -240,7 +241,8 @@ function toPlayerSnapshot(player: unknown): PlayerSnapshot | null {
       rotation: player.rotation,
       lastSeq: typeof player.lastSeq === "number" ? player.lastSeq : 0,
       marker: readMarker(player.marker),
-      markerVisible: player.markerVisible === true
+      markerVisible: player.markerVisible === true,
+      priorityMarker: readPriorityMarker(player.priorityMarker)
     };
   }
 
@@ -249,6 +251,10 @@ function toPlayerSnapshot(player: unknown): PlayerSnapshot | null {
 
 function readMarker(value: unknown): PlayerSnapshot["marker"] {
   return value === "share" || value === "spread" || value === "cone" ? value : "";
+}
+
+function readPriorityMarker(value: unknown): PlayerSnapshot["priorityMarker"] {
+  return value === "number1" || value === "number2" || value === "forbid1" || value === "forbid2" ? value : "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> & PlayerSchemaLike {

@@ -51,7 +51,7 @@ export function CameraControls() {
       enableRotate
       enableZoom
       makeDefault
-      maxDistance={45}
+      maxDistance={18}
       maxPolarAngle={Math.PI / 2.3}
       minDistance={8}
       minPolarAngle={Math.PI / 6}

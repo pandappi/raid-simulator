@@ -22,10 +22,8 @@ type Vec2 = { x: number; z: number };
 const BOT_PREFIX = "bot-";
 const BOT_SPEED = 3.8;
 const TOWER_POSITION_LOCK_MS = 1500;
-const WANDER_RADIUS = 2.2;
 const FIRST_MARKER_MOVE_DELAY_MS = 1000;
 const WANDER_START_MS = MISSING_CAST_MS + FIRST_MARKER_MOVE_DELAY_MS;
-const KICK_BAIT_START_DELAY_MS = 1000;
 const KICK_BAIT_HOLD_MS = 3400;
 const KICK_BAIT_DISTANCE = 7;
 
@@ -43,7 +41,6 @@ const BOT_INITIAL_POSITIONS: Record<PlayerRole, Vec2> = {
 export class BotController {
   private active = false;
   private groupOneRoles: PlayerRole[] | null = null;
-  private wanderStates = new Map<PlayerRole, { center: Vec2; radiusX: number; radiusZ: number; phase: number; speed: number }>();
 
   constructor(private readonly state: RaidRoomState) {}
 
@@ -55,7 +52,6 @@ export class BotController {
     this.active = true;
     this.ensureBots();
     this.groupOneRoles = null;
-    this.wanderStates.clear();
     this.state.players.forEach((player) => {
       if (!isPlayerRole(player.role)) {
         return;
@@ -71,7 +67,6 @@ export class BotController {
   stop() {
     this.active = false;
     this.groupOneRoles = null;
-    this.wanderStates.clear();
     this.removeAllBots();
   }
 
@@ -125,8 +120,9 @@ export class BotController {
       }
 
       const mechanicTarget = this.getTarget(role);
-      const target = this.shouldMoveToMechanicPosition(bot, mechanicTarget) ? mechanicTarget : this.getWanderTarget(bot, role);
-      moveToward(bot, target, deltaSeconds);
+      if (this.shouldMoveToMechanicPosition(bot, mechanicTarget)) {
+        moveToward(bot, mechanicTarget, deltaSeconds);
+      }
     }
   }
 
@@ -151,7 +147,8 @@ export class BotController {
       markers: currentMarkers,
       currentPositions: getPositionsByRole(this.state),
       groupOneRoles,
-      markerCounts: getMarkerCountsByRole(this.state)
+      markerCounts: getMarkerCountsByRole(this.state),
+      priorityMarkers: getPriorityMarkersByRole(this.state)
     });
   }
 
@@ -215,50 +212,22 @@ export class BotController {
     return this.state.elapsed >= lockAt || travelSeconds >= timeToLockSeconds;
   }
 
-  private getWanderTarget(bot: PlayerSchema, role: PlayerRole): Vec2 {
-    const state = this.wanderStates.get(role);
-    if (!state || distance2D(state.center, bot) > WANDER_RADIUS * 2.5) {
-      const nextState = {
-        center: { x: bot.x, z: bot.z },
-        radiusX: 0.9 + Math.random() * 1.1,
-        radiusZ: 0.6 + Math.random() * 0.9,
-        phase: Math.random() * Math.PI * 2,
-        speed: 0.55 + Math.random() * 0.35
-      };
-      this.wanderStates.set(role, nextState);
-      return this.sampleWander(nextState);
-    }
-
-    return this.sampleWander(state);
-  }
-
-  private sampleWander(state: { center: Vec2; radiusX: number; radiusZ: number; phase: number; speed: number }): Vec2 {
-    const t = (this.state.elapsed / 1000) * state.speed + state.phase;
-    return clampToArena(
-      {
-        x: state.center.x + Math.sin(t) * state.radiusX,
-        z: state.center.z + Math.sin(t * 0.73 + state.phase) * state.radiusZ
-      },
-      17
-    );
-  }
-
   private getKickBaitTarget(role: PlayerRole): Vec2 | null {
-    const round = this.state.round;
-    if (round <= 0 || round % 2 !== 0 || round >= TOWER_ROUNDS) {
+    const round = getActiveKickBaitRound(this.state.elapsed);
+    if (!round) {
       return null;
     }
 
     const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
-    const baitStartAt = activateAt + KICK_BAIT_START_DELAY_MS;
+    const baitStartAt = activateAt + 1000;
     const baitEndAt = baitStartAt + KICK_BAIT_HOLD_MS;
     if (this.state.elapsed < baitStartAt || this.state.elapsed > baitEndAt) {
       return null;
     }
 
-    const nextTowers = getTowerPairByRound(round + 1);
+    const nextTowers = getTowerPairByRound(this.state, round + 1);
     const towerMid = scale(add(nextTowers[0], nextTowers[1]), 0.5);
-    const baitDirection = getEvenRoundCast(round) === "past" ? normalize(towerMid) : scale(normalize(towerMid), -1);
+    const baitDirection = getEvenRoundCast(this.state) === "past" ? normalize(towerMid) : scale(normalize(towerMid), -1);
     return add(scale(baitDirection, KICK_BAIT_DISTANCE), spreadOffset(role));
   }
 }
@@ -326,6 +295,22 @@ function getMarkerCountsByRole(state: RaidRoomState): Partial<Record<PlayerRole,
   return markerCounts;
 }
 
+function getPriorityMarkersByRole(state: RaidRoomState) {
+  const priorityMarkers: Partial<Record<PlayerRole, "number1" | "number2" | "forbid1" | "forbid2">> = {};
+  state.players.forEach((player) => {
+    if (
+      isPlayerRole(player.role) &&
+      (player.priorityMarker === "number1" ||
+        player.priorityMarker === "number2" ||
+        player.priorityMarker === "forbid1" ||
+        player.priorityMarker === "forbid2")
+    ) {
+      priorityMarkers[player.role] = player.priorityMarker;
+    }
+  });
+  return priorityMarkers;
+}
+
 function sortTowersByBossFacingLeftRight(a: Vec2, b: Vec2): [Vec2, Vec2] {
   return sortMissingTowersByBossFacingLeftRight(a, b);
 }
@@ -343,28 +328,28 @@ function normalize(a: Vec2): Vec2 {
   return { x: a.x / length, z: a.z / length };
 }
 
-function distance2D(a: Vec2, b: Vec2): number {
-  return Math.hypot(a.x - b.x, a.z - b.z);
-}
-
-function clampToArena(point: Vec2, maxDistance: number): Vec2 {
-  const distance = Math.hypot(point.x, point.z);
-  if (distance <= maxDistance || distance === 0) {
-    return point;
+function getActiveKickBaitRound(elapsed: number): number | null {
+  for (let round = 2; round < TOWER_ROUNDS; round += 2) {
+    const activateAt = MISSING_CAST_MS + (round - 1) * TOWER_INTERVAL_MS + TOWER_ACTIVATE_MS;
+    const baitStartAt = activateAt + 1000;
+    const baitEndAt = baitStartAt + KICK_BAIT_HOLD_MS;
+    if (elapsed >= baitStartAt && elapsed <= baitEndAt) {
+      return round;
+    }
   }
-  return scale(normalize(point), maxDistance);
+  return null;
 }
 
-function getTowerPairByRound(round: number): [Vec2, Vec2] {
-  const base = 3;
-  const shift = round - 1;
+function getTowerPairByRound(state: RaidRoomState, round: number): [Vec2, Vec2] {
+  const base = state.missingBaseIndex;
+  const shift = (round - 1) * state.missingRotationDirection;
   const first = directionToPosition(base + shift, TOWER_DISTANCE);
   const second = directionToPosition(base + 2 + shift, TOWER_DISTANCE);
   return sortTowersByBossFacingLeftRight(first, second);
 }
 
-function getEvenRoundCast(round: number): "future" | "past" {
-  return round % 4 === 0 ? "future" : "past";
+function getEvenRoundCast(state: RaidRoomState): "future" | "past" {
+  return state.lastEvenBossCast === "past" ? "past" : "future";
 }
 
 function spreadOffset(role: PlayerRole): Vec2 {

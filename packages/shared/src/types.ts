@@ -1,5 +1,5 @@
 import type { PlayerRole } from "./roles.js";
-import type { MarkerType } from "./gimmick.js";
+import type { MarkerType, PriorityMarkerType } from "./gimmick.js";
 
 export type Vector2Like = {
   x: number;
@@ -29,6 +29,7 @@ export type PlayerSnapshot = {
   // 머리징 종류와 시각 표시 여부(기믹).
   marker: MarkerType | "";
   markerVisible: boolean;
+  priorityMarker: PriorityMarkerType | "";
 };
 
 export type RoomPhase = "waiting" | "playing";

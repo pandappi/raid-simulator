@@ -1,7 +1,8 @@
 import {
   BOSS_RADIUS,
   TOWER_RADIUS,
-  type MarkerType
+  type MarkerType,
+  type PriorityMarkerType
 } from "./gimmick.js";
 import { PLAYER_ROLES, type PlayerRole } from "./roles.js";
 import type { Vector2Like } from "./types.js";
@@ -16,6 +17,7 @@ export type MissingStrategyInput = {
   currentPositions: Partial<Record<PlayerRole, Vector2Like>>;
   groupOneRoles: readonly PlayerRole[];
   markerCounts?: Partial<Record<PlayerRole, number>>;
+  priorityMarkers?: Partial<Record<PlayerRole, PriorityMarkerType>>;
 };
 
 export const MISSING_INITIAL_POSITIONS: Record<PlayerRole, Vector2Like> = {
@@ -37,12 +39,12 @@ export const MISSING_SHARE_PAIRS: readonly (readonly [PlayerRole, PlayerRole])[]
 ];
 
 const INITIAL_LEFT_PRIORITY: PlayerRole[] = ["H1", "H2", "MT", "ST", "D1", "D2", "D3", "D4"];
+const INITIAL_RIGHT_PRIORITY = [...INITIAL_LEFT_PRIORITY].reverse();
 const MARKER_ORDER: MarkerType[] = ["share", "cone", "spread"];
-const MARKER_DEFAULT_SIDE: Record<MarkerType, MissingTowerSide> = {
-  share: "left",
-  cone: "left",
-  spread: "right"
-};
+const WAYMARK_DISTANCE = 13;
+const CIRCLE_WAYMARK_RADIUS = 1.35;
+const WAYMARK_INNER_EDGE_DISTANCE = WAYMARK_DISTANCE - CIRCLE_WAYMARK_RADIUS;
+const TOWER_INSIDE_EDGE_GAP = 0.3;
 
 export function getMissingGroupOneRoles(markers: Partial<Record<PlayerRole, MarkerType>>): PlayerRole[] {
   return MISSING_SHARE_PAIRS.flatMap(([a, b]) => (markers[a] === "share" || markers[b] === "share" ? [a, b] : []));
@@ -63,8 +65,11 @@ export function getMissingStrategyPositions(input: MissingStrategyInput): Record
   const sideAssignments = buildMissingTowerSideAssignments(activeRoles, input);
 
   placeInactivePlayers(positions, inactiveRoles, input.leftTower, input.rightTower, input.round);
-  placeActiveTowerPlayers(positions, activeRoles, input.markers, sideAssignments, input.leftTower, input.rightTower);
-  placeSupportPlayers(positions, activeRoles, inactiveRoles, input.markers, sideAssignments, input.leftTower, input.rightTower);
+  if (input.round % 2 === 1) {
+    placeOddTowerPlayers(positions, activeRoles, input.markers, input.leftTower, input.rightTower);
+  } else {
+    placeEvenTowerPlayers(positions, activeRoles, input.markers, sideAssignments, input.leftTower, input.rightTower);
+  }
   return positions;
 }
 
@@ -97,18 +102,30 @@ export function buildMissingTowerSideAssignments(
     counts[side] += 1;
   };
 
+  if (input.round === 8 && input.priorityMarkers) {
+    for (const entry of entries) {
+      const priorityMarker = input.priorityMarkers[entry.role];
+      if (entry.marker === "cone" && priorityMarker === "number1") assign(entry.role, "left");
+      if (entry.marker === "cone" && priorityMarker === "number2") assign(entry.role, "right");
+      if (entry.marker === "spread" && priorityMarker === "forbid1") assign(entry.role, "left");
+      if (entry.marker === "spread" && priorityMarker === "forbid2") assign(entry.role, "right");
+    }
+  }
+
   for (const marker of MARKER_ORDER) {
     const sameMarker = entries.filter((entry) => entry.marker === marker);
     if (sameMarker.length === 0) continue;
 
+    const sorted = sortByPriority(sameMarker, INITIAL_LEFT_PRIORITY);
+    if (sameMarker.length === 1) {
+      const only = sorted[0];
+      if (only) assign(only.role, sideWithRoom(counts));
+      continue;
+    }
+
     const initial = sameMarker.every((entry) => entry.markerCount <= 1);
     if (initial) {
-      const sorted = [...sameMarker].sort((a, b) => INITIAL_LEFT_PRIORITY.indexOf(a.role) - INITIAL_LEFT_PRIORITY.indexOf(b.role));
       sorted.forEach((entry, index) => {
-        if (sameMarker.length === 1) {
-          assign(entry.role, MARKER_DEFAULT_SIDE[marker]);
-          return;
-        }
         assign(entry.role, index === 0 ? "left" : index === 1 ? "right" : sideWithRoom(counts));
       });
       continue;
@@ -129,15 +146,13 @@ export function buildMissingTowerSideAssignments(
         continue;
       }
       const opposite = side === "left" ? "right" : "left";
+      // When the same marker is reassigned to both players in one tower,
+      // the center-side player keeps this tower's priority and the outer player flips.
       const sortedByDistance = [...groupEntries].sort((a, b) => distanceToBoss(a.position) - distanceToBoss(b.position));
       sortedByDistance.forEach((entry, index) => {
         assign(entry.role, index === sortedByDistance.length - 1 ? opposite : side);
       });
     }
-  }
-
-  for (const entry of entries) {
-    assign(entry.role, MARKER_DEFAULT_SIDE[entry.marker]);
   }
 
   return assignments;
@@ -150,69 +165,57 @@ export function sortMissingTowersByBossFacingLeftRight<T extends Vector2Like>(a:
   return dot(a, leftSide) < dot(b, leftSide) ? [a, b] : [b, a];
 }
 
-function placeActiveTowerPlayers(
+function placeOddTowerPlayers(
   positions: Record<PlayerRole, Vector2Like>,
   activeRoles: PlayerRole[],
   markers: Partial<Record<PlayerRole, MarkerType>>,
-  sideAssignments: Partial<Record<PlayerRole, MissingTowerSide>>,
   left: Vector2Like,
   right: Vector2Like
 ) {
-  for (const side of ["left", "right"] as const) {
-    const tower = side === "left" ? left : right;
-    const roles = activeRoles
-      .filter((role) => sideAssignments[role] === side)
-      .sort((a, b) => MARKER_ORDER.indexOf(markers[a] ?? "spread") - MARKER_ORDER.indexOf(markers[b] ?? "spread"));
-    roles.forEach((role, index) => {
-      positions[role] = towerOwnerPoint(tower, index);
-    });
+  const shares = activeRoles.filter((role) => markers[role] === "share");
+  const leftShare = firstByPriority(shares, INITIAL_LEFT_PRIORITY);
+  const rightShare = firstByPriority(
+    shares.filter((role) => role !== leftShare),
+    INITIAL_RIGHT_PRIORITY
+  );
+  const cone = firstByPriority(activeRoles.filter((role) => markers[role] === "cone"), INITIAL_LEFT_PRIORITY);
+  const spread = firstByPriority(activeRoles.filter((role) => markers[role] === "spread"), INITIAL_RIGHT_PRIORITY);
+
+  if (leftShare) {
+    positions[leftShare] = left;
+  }
+  if (cone) {
+    positions[cone] = towerOuterInsidePoint(left);
+  }
+  const rightSharePoint = bossTowerIntersectionMidpoint(right);
+  if (rightShare) {
+    positions[rightShare] = rightSharePoint;
+  }
+  if (spread) {
+    positions[spread] = farthestTowerInsidePoint(right, rightSharePoint);
   }
 }
 
-function placeSupportPlayers(
+function placeEvenTowerPlayers(
   positions: Record<PlayerRole, Vector2Like>,
   activeRoles: PlayerRole[],
-  inactiveRoles: PlayerRole[],
   markers: Partial<Record<PlayerRole, MarkerType>>,
   sideAssignments: Partial<Record<PlayerRole, MissingTowerSide>>,
   left: Vector2Like,
   right: Vector2Like
 ) {
-  const freeRoles = [...inactiveRoles];
-  const takeFreeRole = () => freeRoles.shift();
-
   for (const side of ["left", "right"] as const) {
     const tower = side === "left" ? left : right;
-    const towerRoles = activeRoles
-      .filter((role) => sideAssignments[role] === side)
-      .sort((a, b) => MARKER_ORDER.indexOf(markers[a] ?? "spread") - MARKER_ORDER.indexOf(markers[b] ?? "spread"));
+    const conePoint = bossTowerSideIntersection(tower, side);
+    const coneRole = activeRoles.find((role) => markers[role] === "cone" && sideAssignments[role] === side);
+    const spreadRole = activeRoles.find((role) => markers[role] === "spread" && sideAssignments[role] === side);
 
-    towerRoles.forEach((role, index) => {
-      if (markers[role] !== "share") return;
-      for (let helperIndex = 0; helperIndex < 2; helperIndex++) {
-        const helperRole = takeFreeRole();
-        if (!helperRole) return;
-        positions[helperRole] = towerSupportPoint(tower, index, helperIndex);
-      }
-    });
-  }
-
-  for (const side of ["left", "right"] as const) {
-    const tower = side === "left" ? left : right;
-    const towerRoles = activeRoles
-      .filter((role) => sideAssignments[role] === side)
-      .sort((a, b) => MARKER_ORDER.indexOf(markers[a] ?? "spread") - MARKER_ORDER.indexOf(markers[b] ?? "spread"));
-
-    towerRoles.forEach((role, index) => {
-      if (markers[role] !== "cone") return;
-      const baitRole = takeFreeRole();
-      if (!baitRole) return;
-      positions[baitRole] = towerConeBaitPoint(tower, index);
-    });
-  }
-
-  for (const role of freeRoles) {
-    positions[role] = safeIdlePoint(role);
+    if (coneRole) {
+      positions[coneRole] = moveToward(conePoint, tower, 0.2);
+    }
+    if (spreadRole) {
+      positions[spreadRole] = farthestTowerInsidePoint(tower, conePoint);
+    }
   }
 }
 
@@ -241,44 +244,8 @@ function placeInactivePlayers(
 
   for (const tank of tanks) positions[tank] = bossClockPointFromSix(between, 11);
   for (const melee of melees) positions[melee] = bossClockPointFromSix(between, 1);
-  for (const healer of healers) positions[healer] = bossClockPointFromSix(between, 9, 11.4);
-  for (const ranged of rangeds) positions[ranged] = bossClockPointFromSix(between, 3, 11.4);
-}
-
-function towerOwnerPoint(tower: Vector2Like, slotIndex: number): Vector2Like {
-  const radial = towerRadial(tower, slotIndex);
-  return add(tower, scale(radial, TOWER_RADIUS - 0.55));
-}
-
-function towerSupportPoint(tower: Vector2Like, slotIndex: number, helperIndex: number): Vector2Like {
-  const radial = towerRadial(tower, slotIndex);
-  const tangent = { x: -radial.z, z: radial.x };
-  const side = helperIndex === 0 ? -1 : 1;
-  return add(tower, add(scale(radial, TOWER_RADIUS + 0.45), scale(tangent, side * 0.65)));
-}
-
-function towerConeBaitPoint(tower: Vector2Like, slotIndex: number): Vector2Like {
-  const radial = towerRadial(tower, slotIndex);
-  return add(tower, scale(radial, TOWER_RADIUS + 0.8));
-}
-
-function safeIdlePoint(role: PlayerRole): Vector2Like {
-  const offsets: Record<PlayerRole, Vector2Like> = {
-    MT: { x: -1.2, z: -0.8 },
-    ST: { x: -0.4, z: -0.8 },
-    H1: { x: 0.4, z: -0.8 },
-    H2: { x: 1.2, z: -0.8 },
-    D1: { x: -1.2, z: 0.8 },
-    D2: { x: -0.4, z: 0.8 },
-    D3: { x: 0.4, z: 0.8 },
-    D4: { x: 1.2, z: 0.8 }
-  };
-  return offsets[role];
-}
-
-function towerRadial(tower: Vector2Like, slotIndex: number): Vector2Like {
-  const outward = normalize(tower);
-  return slotIndex % 2 === 0 ? outward : scale(outward, -1);
+  for (const healer of healers) positions[healer] = bossClockPointFromSix(between, 9, WAYMARK_INNER_EDGE_DISTANCE);
+  for (const ranged of rangeds) positions[ranged] = bossClockPointFromSix(between, 3, WAYMARK_INNER_EDGE_DISTANCE);
 }
 
 function currentTowerSide(position: Vector2Like, left: Vector2Like, right: Vector2Like): MissingTowerSide {
@@ -292,6 +259,49 @@ function sideWithRoom(counts: Record<MissingTowerSide, number>): MissingTowerSid
   return counts.left <= counts.right ? "left" : "right";
 }
 
+function sortByPriority<T extends { role: PlayerRole }>(entries: T[], priority: readonly PlayerRole[]): T[] {
+  return [...entries].sort((a, b) => priority.indexOf(a.role) - priority.indexOf(b.role));
+}
+
+function firstByPriority(roles: PlayerRole[], priority: readonly PlayerRole[]): PlayerRole | undefined {
+  return [...roles].sort((a, b) => priority.indexOf(a) - priority.indexOf(b))[0];
+}
+
+function towerOuterInsidePoint(tower: Vector2Like): Vector2Like {
+  return add(tower, scale(normalize(tower), TOWER_RADIUS - TOWER_INSIDE_EDGE_GAP));
+}
+
+function farthestTowerInsidePoint(tower: Vector2Like, from: Vector2Like): Vector2Like {
+  const away = normalize({ x: tower.x - from.x, z: tower.z - from.z });
+  return add(tower, scale(away, TOWER_RADIUS - TOWER_INSIDE_EDGE_GAP));
+}
+
+function moveToward(from: Vector2Like, to: Vector2Like, amount: number): Vector2Like {
+  const direction = normalize({ x: to.x - from.x, z: to.z - from.z });
+  return add(from, scale(direction, amount));
+}
+
+function bossTowerIntersectionMidpoint(tower: Vector2Like): Vector2Like {
+  const distance = Math.hypot(tower.x, tower.z);
+  const fromBoss = normalize(tower);
+  const along = (BOSS_RADIUS * BOSS_RADIUS - TOWER_RADIUS * TOWER_RADIUS + distance * distance) / (2 * distance);
+  return scale(fromBoss, along);
+}
+
+function bossTowerSideIntersection(tower: Vector2Like, side: MissingTowerSide): Vector2Like {
+  const [a, b] = bossTowerIntersections(tower);
+  const forwardToBoss = normalize(scale(tower, -1));
+  const leftSide = { x: -forwardToBoss.z, z: forwardToBoss.x };
+  return side === "left" ? (dot(a, leftSide) < dot(b, leftSide) ? a : b) : dot(a, leftSide) > dot(b, leftSide) ? a : b;
+}
+
+function bossTowerIntersections(tower: Vector2Like): [Vector2Like, Vector2Like] {
+  const midpoint = bossTowerIntersectionMidpoint(tower);
+  const height = Math.sqrt(Math.max(0, BOSS_RADIUS * BOSS_RADIUS - Math.hypot(midpoint.x, midpoint.z) ** 2));
+  const side = normalize({ x: -tower.z, z: tower.x });
+  return [add(midpoint, scale(side, height)), add(midpoint, scale(side, -height))];
+}
+
 function towerPoint(tower: Vector2Like, point: "center" | "inner" | "outer" | "outerEdge" | "healerOuterOutside"): Vector2Like {
   const inward = normalize({ x: -tower.x, z: -tower.z });
   const outward = scale(inward, -1);
@@ -299,7 +309,7 @@ function towerPoint(tower: Vector2Like, point: "center" | "inner" | "outer" | "o
   if (point === "inner") return add(tower, scale(inward, 3.5));
   if (point === "outer") return add(tower, scale(outward, 3.6));
   if (point === "outerEdge") return add(tower, scale(outward, TOWER_RADIUS - 0.45));
-  return add(tower, scale(outward, TOWER_RADIUS + 0.7));
+  return add(tower, scale(outward, TOWER_RADIUS + 0.9));
 }
 
 function bossClockPointFromSix(sixDirection: Vector2Like, hour: 1 | 3 | 9 | 11, distance = BOSS_RADIUS + 0.35): Vector2Like {

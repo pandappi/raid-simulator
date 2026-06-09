@@ -167,8 +167,19 @@ input {
 }
 
 .canvas-wrap {
+  position: relative;
   width: 100vw;
   height: 100vh;
+}
+
+.raidwide-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: #fff;
+  mix-blend-mode: screen;
+  transition: opacity 80ms linear;
 }
 
 .overlay {
@@ -281,6 +292,49 @@ input {
   stroke-width: 1.5;
 }
 
+.priority-marker {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  margin: 0 auto 4px;
+  place-items: center;
+  background: rgba(8, 12, 18, 0.72);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  filter: drop-shadow(0 4px 9px rgba(0, 0, 0, 0.38));
+  pointer-events: none;
+  user-select: none;
+}
+
+.priority-marker--number {
+  color: #e9fff9;
+  border: 3px solid #c9fff4;
+  clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+}
+
+.priority-marker--forbid {
+  position: relative;
+  color: #ffe9e9;
+  border: 3px solid #ff4c4c;
+  border-radius: 999px;
+}
+
+.priority-marker--forbid::after {
+  position: absolute;
+  inset: 15px 4px auto;
+  height: 3px;
+  background: #ff4c4c;
+  content: "";
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.priority-marker--forbid span {
+  position: relative;
+  z-index: 1;
+}
+
 .tower-label {
   display: grid;
   width: 26px;
@@ -294,14 +348,50 @@ input {
   user-select: none;
 }
 
-.boss-cast {
-  width: 150px;
-  padding: 6px 8px 7px;
-  border: 1px solid rgba(255, 120, 120, 0.7);
+.boss-target-ui {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 12;
+  width: min(360px, calc(100vw - 32px));
+  padding: 7px 9px 8px;
+  border: 1px solid rgba(255, 208, 208, 0.72);
   border-radius: 6px;
   background: rgba(40, 8, 14, 0.85);
   color: #ffd0d0;
   text-align: center;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  transform: translateX(-50%);
+  user-select: none;
+  pointer-events: none;
+}
+
+.boss-target-name {
+  margin-bottom: 5px;
+  color: #fff1f1;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.boss-hp-bar {
+  height: 9px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  border: 1px solid rgba(229, 255, 230, 0.48);
+  border-radius: 999px;
+  background: rgba(8, 18, 12, 0.72);
+}
+
+.boss-hp-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #43d17a, #b8f56e);
+}
+
+.boss-cast {
+  color: rgba(255, 208, 208, 0.62);
   user-select: none;
 }
 
@@ -327,6 +417,10 @@ input {
   border-radius: inherit;
   background: #ffb36b;
   transform-origin: left center;
+}
+
+.boss-cast.is-casting {
+  color: #ffd0d0;
 }
 
 /* --- 기믹 컨트롤 패널 --- */
