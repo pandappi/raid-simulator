@@ -13,14 +13,16 @@ export function Towers() {
   );
 }
 
-const LINE_HEIGHT = 5; // 탑 중앙 수직 가이드 라인 높이(m)
-const ORB_RADIUS = 0.34;
+// 구체는 탑과 같은 크기(반지름 = TOWER_RADIUS). 위에서 내려와 판정 시점에 바닥에 닿는다.
+const ORB_RADIUS = TOWER_RADIUS;
+const FALL_DISTANCE = 9; // 구체 바닥이 떨어지는 높이(m)
+const LINE_HEIGHT = ORB_RADIUS * 2 + FALL_DISTANCE; // 가이드 라인 높이
 
 function Tower({ tower, elapsed }: { tower: TowerView; elapsed: number }) {
   const spawnAt = MISSING_CAST_MS + (tower.round - 1) * TOWER_INTERVAL_MS;
   const progress = Math.min(1, Math.max(0, (elapsed - spawnAt) / TOWER_ACTIVATE_MS));
-  // 구체는 위에서 천천히 내려와 판정 시점(progress=1)에 바닥에 닿는다.
-  const orbY = ORB_RADIUS + (LINE_HEIGHT - ORB_RADIUS) * (1 - progress);
+  // progress=1에서 구체 바닥이 y=0(바닥)에 닿도록 중심 y를 계산.
+  const orbY = ORB_RADIUS + FALL_DISTANCE * (1 - progress);
 
   return (
     <group position={[tower.x, 0, tower.z]}>
@@ -31,13 +33,21 @@ function Tower({ tower, elapsed }: { tower: TowerView; elapsed: number }) {
       </mesh>
       {/* 중앙 수직 가이드 라인 */}
       <mesh position={[0, LINE_HEIGHT / 2, 0]}>
-        <cylinderGeometry args={[0.045, 0.045, LINE_HEIGHT, 8]} />
-        <meshBasicMaterial color="#4dd2ff" transparent opacity={0.45} depthWrite={false} />
+        <cylinderGeometry args={[0.05, 0.05, LINE_HEIGHT, 8]} />
+        <meshBasicMaterial color="#4dd2ff" transparent opacity={0.4} depthWrite={false} />
       </mesh>
-      {/* 떨어지는 구체 */}
+      {/* 떨어지는 구체(탑 크기 · 반투명) */}
       <mesh position={[0, orbY, 0]}>
-        <sphereGeometry args={[ORB_RADIUS, 20, 20]} />
-        <meshStandardMaterial color="#9fe8ff" emissive="#2aa6d0" emissiveIntensity={0.7} roughness={0.4} />
+        <sphereGeometry args={[ORB_RADIUS, 32, 24]} />
+        <meshStandardMaterial
+          color="#7fd6f5"
+          emissive="#2aa6d0"
+          emissiveIntensity={0.5}
+          roughness={0.35}
+          transparent
+          opacity={0.4}
+          depthWrite={false}
+        />
       </mesh>
     </group>
   );

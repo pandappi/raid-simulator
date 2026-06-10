@@ -225,8 +225,8 @@ input {
   margin-right: 10px;
   padding: 4px 10px;
   border-radius: 8px;
-  background: rgba(116, 192, 252, 0.16);
-  border: 1px solid rgba(116, 192, 252, 0.4);
+  background: #e6f6f3;
+  border: 1px solid var(--accent);
 }
 .my-role-label {
   font-size: 10px;
@@ -236,7 +236,7 @@ input {
 .my-role-value {
   font-size: 15px;
   font-weight: 900;
-  color: #cfe8ff;
+  color: #064a45;
 }
 
 /* 로비: 방 코드 입력 + 만들기/참여 (밝은 패널 테마) */
@@ -291,7 +291,9 @@ input {
 .invite-code {
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #eef2f6;
+  border: 1px solid var(--line);
+  color: #17202a;
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 1px;
@@ -299,9 +301,9 @@ input {
 .invite-copy {
   padding: 5px 10px;
   border-radius: 7px;
-  border: 1px solid rgba(116, 192, 252, 0.5);
-  background: rgba(116, 192, 252, 0.16);
-  color: #cfe8ff;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
   font-weight: 800;
   font-size: 12px;
   cursor: pointer;
@@ -323,19 +325,27 @@ input {
   flex: 1;
   padding: 6px 8px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8edf2;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
   font-weight: 700;
+}
+
+.room-timer {
+  font-weight: 800;
+  color: #0f766e;
+}
+.room-timer.is-low {
+  color: var(--danger);
 }
 
 .overlay-locked {
   margin-top: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  background: rgba(255, 107, 107, 0.18);
-  border: 1px solid rgba(255, 107, 107, 0.5);
-  color: #ffb4b4;
+  background: #fdecec;
+  border: 1px solid var(--danger);
+  color: #a02631;
   font-size: 12.5px;
   font-weight: 800;
 }

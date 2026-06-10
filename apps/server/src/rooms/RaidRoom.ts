@@ -1,5 +1,13 @@
 import colyseus, { type Client } from "colyseus";
-import { isPlayerRole, MAX_INPUT_DT, type JoinOptions, type PlayerRole } from "@raid-simulator/shared";
+import {
+  IDLE_DISCONNECT_MS,
+  isPlayerRole,
+  MAX_INPUT_DT,
+  MAX_ROOMS,
+  ROOM_LIFETIME_MS,
+  type JoinOptions,
+  type PlayerRole
+} from "@raid-simulator/shared";
 import { PlayerSchema } from "../schemas/PlayerSchema.js";
 import { RaidRoomState } from "../schemas/RaidRoomState.js";
 import { isClientInput, ROLE_INITIAL_POSITIONS, updatePlayerPosition } from "../utils/movement.js";
@@ -11,18 +19,33 @@ const { Room } = colyseus;
 
 // 기믹 타임라인 진행용 틱 간격(ms). 이동은 명령 기반이라 이 틱은 시간 진행에만 쓴다.
 const GIMMICK_TICK_MS = 50;
-const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+const IDLE_TIMEOUT_MS = IDLE_DISCONNECT_MS;
+const ROOM_EXPIRED_CODE = 4001;
+
+// 동시에 살아있는 방 수(생성 한도 체크용).
+let activeRoomCount = 0;
 
 export class RaidRoom extends Room<RaidRoomState> {
   private gimmick!: GimmickController;
   private bots!: BotController;
   private lastInputAtByClient = new Map<string, number>();
+  private counted = false;
+  private roomAgeMs = 0;
+  private expired = false;
 
   onCreate() {
+    // 방 수 한도: 30개 초과면 생성 거부.
+    if (activeRoomCount >= MAX_ROOMS) {
+      throw new Error("현재 생성된 방이 가득 찼습니다(최대 30개). 잠시 후 다시 시도해주세요.");
+    }
+    activeRoomCount += 1;
+    this.counted = true;
+
     this.maxClients = 8;
     // 비공개 방: 자동 매칭(joinOrCreate)으로 섞이지 않고, 방 코드(roomId)로만 입장.
     this.setPrivate(true);
     this.setState(new RaidRoomState());
+    this.state.roomRemainingSec = Math.ceil(ROOM_LIFETIME_MS / 1000);
     this.gimmick = new GimmickController(this.state);
     this.bots = new BotController(this.state);
 
@@ -114,6 +137,7 @@ export class RaidRoom extends Room<RaidRoomState> {
         this.bots.update(dt);
       }
       this.gimmick.update(dt);
+      this.updateRoomLifetime(dt);
       this.disconnectIdleClients();
     }, GIMMICK_TICK_MS);
   }
@@ -145,6 +169,28 @@ export class RaidRoom extends Room<RaidRoomState> {
 
   onDispose() {
     this.lastInputAtByClient.clear();
+    if (this.counted) {
+      activeRoomCount -= 1;
+      this.counted = false;
+    }
+  }
+
+  // 방 수명(15분) 관리 + 남은 시간 표시. 만료 시 전원 연결 해제 → 빈 방은 자동 삭제(autoDispose).
+  private updateRoomLifetime(dt: number) {
+    if (this.expired) {
+      return;
+    }
+    this.roomAgeMs += dt;
+    const remaining = Math.max(0, Math.ceil((ROOM_LIFETIME_MS - this.roomAgeMs) / 1000));
+    if (remaining !== this.state.roomRemainingSec) {
+      this.state.roomRemainingSec = remaining;
+    }
+    if (this.roomAgeMs >= ROOM_LIFETIME_MS) {
+      this.expired = true;
+      for (const client of this.clients) {
+        client.leave(ROOM_EXPIRED_CODE);
+      }
+    }
   }
 
   private disconnectIdleClients() {

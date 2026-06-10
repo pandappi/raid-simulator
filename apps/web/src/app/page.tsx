@@ -123,6 +123,7 @@ export default function Home() {
         role={scenarioMode ? scenarioFocusRole : selfRole}
         roomId={scenarioMode ? null : roomId}
         controlsLocked={!scenarioMode && controlsLocked}
+        remainingSec={scenarioMode ? null : gimmick.roomRemainingSec}
         canChangeRole={!scenarioMode && !gimmickRunning}
         occupiedRoles={occupiedByOthers}
         onChangeRole={setRole}

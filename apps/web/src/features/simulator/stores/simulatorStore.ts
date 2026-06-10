@@ -21,6 +21,7 @@ export type GimmickView = {
   elapsed: number;
   paused: boolean;
   controlsLocked: boolean;
+  roomRemainingSec: number;
   bossActive: boolean;
   bossCast: string;
   towers: TowerView[];
@@ -35,6 +36,7 @@ const initialGimmick: GimmickView = {
   elapsed: 0,
   paused: false,
   controlsLocked: false,
+  roomRemainingSec: 0,
   bossActive: false,
   bossCast: "",
   towers: [],

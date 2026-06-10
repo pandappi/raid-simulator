@@ -243,6 +243,7 @@ function syncGimmick(state: unknown) {
     elapsed: Number(s.elapsed) || 0,
     paused: s.paused === true,
     controlsLocked: s.controlsLocked === true,
+    roomRemainingSec: Number(s.roomRemainingSec) || 0,
     bossActive: s.bossActive === true,
     bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
     towers,

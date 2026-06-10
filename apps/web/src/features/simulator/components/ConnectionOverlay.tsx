@@ -6,6 +6,7 @@ type ConnectionOverlayProps = {
   role: PlayerRole | null;
   roomId?: string | null;
   controlsLocked?: boolean;
+  remainingSec?: number | null;
   canChangeRole?: boolean;
   occupiedRoles?: PlayerRole[];
   onChangeRole?: (role: PlayerRole) => void;
@@ -14,6 +15,13 @@ type ConnectionOverlayProps = {
   status: string;
   onLeave: () => void;
 };
+
+function formatTime(totalSec: number): string {
+  const sec = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 const ROLE_GROUP: Record<PlayerRole, string> = {
   MT: "탱커",
@@ -31,6 +39,7 @@ export function ConnectionOverlay({
   role,
   roomId = null,
   controlsLocked = false,
+  remainingSec = null,
   canChangeRole = false,
   occupiedRoles = [],
   onChangeRole,
@@ -63,6 +72,9 @@ export function ConnectionOverlay({
           </div>
           <div className="overlay-meta">
             {status} · {playerCount}/8 players · {sessionId?.slice(0, 6)}
+            {remainingSec != null && (
+              <span className={`room-timer${remainingSec <= 60 ? " is-low" : ""}`}> · 남은 {formatTime(remainingSec)}</span>
+            )}
           </div>
         </div>
         {role && (

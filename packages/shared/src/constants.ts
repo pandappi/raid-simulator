@@ -1,5 +1,10 @@
 export const MAX_PLAYERS = 8;
 export const ARENA_RADIUS = 20;
+
+// 서버 방 운영 한도
+export const MAX_ROOMS = 30; // 동시에 만들 수 있는 방 수
+export const ROOM_LIFETIME_MS = 15 * 60 * 1000; // 방 1개의 사용 가능 시간
+export const IDLE_DISCONNECT_MS = 3 * 60 * 1000; // 무입력 시 연결 해제까지
 export const PLAYER_MOVE_SPEED = 5.6;
 export const SERVER_TICK_RATE = 20;
 export const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;

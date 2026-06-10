@@ -1,7 +1,7 @@
 import {
   directionToPosition,
   getMissingGroupOneRoles,
-  getMissingStrategyTarget,
+  getMissingStrategyPositions,
   isPlayerRole,
   MISSING_CAST_MS,
   PLAYER_MOVE_SPEED,
@@ -115,6 +115,8 @@ export class BotController {
 
     this.ensureBots();
     const deltaSeconds = Math.max(0, deltaMs / 1000);
+    // 전략 위치는 프레임당 한 번만 계산해 8개 봇이 공유한다(서버 부하 절감).
+    const strategy = this.computeStrategyPositions();
     for (const role of PLAYER_ROLES) {
       const bot = this.state.players.get(botId(role));
       if (!bot) {
@@ -125,32 +127,26 @@ export class BotController {
         continue;
       }
 
-      const mechanicTarget = this.getTarget(role);
+      const mechanicTarget = this.getTarget(role, strategy);
       if (this.shouldMoveToMechanicPosition(bot, mechanicTarget)) {
         moveToward(bot, mechanicTarget, deltaSeconds);
       }
     }
   }
 
-  private getTarget(role: PlayerRole): Vec2 {
+  private computeStrategyPositions(): Record<PlayerRole, Vec2> | null {
     const towers = getCurrentTowers(this.state);
     if (this.state.gimmickPhase !== "running" || !towers || this.state.round === 0) {
-      return BOT_INITIAL_POSITIONS[role];
+      return null;
     }
-
     const [left, right] = towers;
-    const kickBait = this.getKickBaitTarget(role);
-    if (kickBait) {
-      return kickBait;
-    }
-
     const currentMarkers = getMarkersByRole(this.state);
     const groupOneRoles = this.getGroupOneRoles(currentMarkers);
     // 좌/우 배정은 라운드 시작 시점(직전 판정 위치)에서 한 번 고정한 스냅샷으로 계산한다.
     if (!this.sideSnapshot || this.sideSnapshot.round !== this.state.round) {
       this.sideSnapshot = { round: this.state.round, positions: getPositionsByRole(this.state) };
     }
-    return getMissingStrategyTarget(role, {
+    return getMissingStrategyPositions({
       round: this.state.round,
       leftTower: left,
       rightTower: right,
@@ -159,7 +155,18 @@ export class BotController {
       groupOneRoles,
       markerCounts: getMarkerCountsByRole(this.state),
       priorityMarkers: getPriorityMarkersByRole(this.state)
-    });
+    }) as Record<PlayerRole, Vec2>;
+  }
+
+  private getTarget(role: PlayerRole, strategy: Record<PlayerRole, Vec2> | null): Vec2 {
+    if (!strategy) {
+      return BOT_INITIAL_POSITIONS[role];
+    }
+    const kickBait = this.getKickBaitTarget(role);
+    if (kickBait) {
+      return kickBait;
+    }
+    return strategy[role];
   }
 
   private getGroupOneRoles(markers: Partial<Record<PlayerRole, MarkerType>>): PlayerRole[] {
