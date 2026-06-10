@@ -239,30 +239,40 @@ input {
   color: #cfe8ff;
 }
 
-/* 로비: 방 코드 입력 + 만들기/참여 */
+/* 로비: 방 코드 입력 + 만들기/참여 (밝은 패널 테마) */
 .code-input {
   width: 100%;
+  height: 44px;
   margin-top: 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: #e8edf2;
+  padding: 0 13px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
   font-size: 15px;
   letter-spacing: 1px;
+  outline: none;
+}
+.code-input::placeholder {
+  color: #94a3b8;
+}
+.code-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 159, 143, 0.16);
 }
 .join-actions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 .join-actions .join-button {
   flex: 1;
+  margin-top: 0;
 }
 .join-button.secondary {
-  background: rgba(116, 192, 252, 0.18);
-  border: 1px solid rgba(116, 192, 252, 0.5);
-  color: #cfe8ff;
+  background: #fff;
+  border: 1px solid var(--accent);
+  color: #064a45;
 }
 
 /* 시뮬 내: 초대 코드 공유 */
