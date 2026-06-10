@@ -43,6 +43,8 @@ const BOT_INITIAL_POSITIONS: Record<PlayerRole, Vec2> = {
 export class BotController {
   private active = false;
   private groupOneRoles: PlayerRole[] | null = null;
+  // 라운드 시작(=직전 판정) 시점의 위치 스냅샷. 좌/우 배정이 매 프레임 흔들리지 않게 고정한다.
+  private sideSnapshot: { round: number; positions: Partial<Record<PlayerRole, Vec2>> } | null = null;
 
   constructor(private readonly state: RaidRoomState) {}
 
@@ -54,6 +56,7 @@ export class BotController {
     this.active = true;
     this.ensureBots();
     this.groupOneRoles = null;
+    this.sideSnapshot = null;
     this.state.players.forEach((player) => {
       if (!isPlayerRole(player.role)) {
         return;
@@ -69,6 +72,7 @@ export class BotController {
   stop() {
     this.active = false;
     this.groupOneRoles = null;
+    this.sideSnapshot = null;
     this.removeAllBots();
   }
 
@@ -142,12 +146,16 @@ export class BotController {
 
     const currentMarkers = getMarkersByRole(this.state);
     const groupOneRoles = this.getGroupOneRoles(currentMarkers);
+    // 좌/우 배정은 라운드 시작 시점(직전 판정 위치)에서 한 번 고정한 스냅샷으로 계산한다.
+    if (!this.sideSnapshot || this.sideSnapshot.round !== this.state.round) {
+      this.sideSnapshot = { round: this.state.round, positions: getPositionsByRole(this.state) };
+    }
     return getMissingStrategyTarget(role, {
       round: this.state.round,
       leftTower: left,
       rightTower: right,
       markers: currentMarkers,
-      currentPositions: getPositionsByRole(this.state),
+      currentPositions: this.sideSnapshot.positions,
       groupOneRoles,
       markerCounts: getMarkerCountsByRole(this.state),
       priorityMarkers: getPriorityMarkersByRole(this.state)

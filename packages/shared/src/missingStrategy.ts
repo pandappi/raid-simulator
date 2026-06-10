@@ -66,7 +66,7 @@ export function getMissingStrategyPositions(input: MissingStrategyInput): Record
 
   placeInactivePlayers(positions, inactiveRoles, input.leftTower, input.rightTower, input.round);
   if (input.round % 2 === 1) {
-    placeOddTowerPlayers(positions, activeRoles, input.markers, input.leftTower, input.rightTower);
+    placeOddTowerPlayers(positions, activeRoles, input.markers, sideAssignments, input.leftTower, input.rightTower);
   } else {
     placeEvenTowerPlayers(positions, activeRoles, input.markers, sideAssignments, input.leftTower, input.rightTower);
   }
@@ -169,15 +169,17 @@ function placeOddTowerPlayers(
   positions: Record<PlayerRole, Vector2Like>,
   activeRoles: PlayerRole[],
   markers: Partial<Record<PlayerRole, MarkerType>>,
+  sideAssignments: Partial<Record<PlayerRole, MissingTowerSide>>,
   left: Vector2Like,
   right: Vector2Like
 ) {
   const shares = activeRoles.filter((role) => markers[role] === "share");
-  const leftShare = firstByPriority(shares, INITIAL_LEFT_PRIORITY);
-  const rightShare = firstByPriority(
-    shares.filter((role) => role !== leftShare),
-    INITIAL_RIGHT_PRIORITY
-  );
+  // 좌/우는 짝수탑과 동일하게 sideAssignments(첫 부여=우선순위, 재지정=현재 탑 쪽) 사용.
+  // 값이 없으면 역할군 우선순위로 폴백.
+  const leftShare = shares.find((role) => sideAssignments[role] === "left") ?? firstByPriority(shares, INITIAL_LEFT_PRIORITY);
+  const rightShare =
+    shares.find((role) => role !== leftShare && sideAssignments[role] === "right") ??
+    shares.find((role) => role !== leftShare);
   const cone = firstByPriority(activeRoles.filter((role) => markers[role] === "cone"), INITIAL_LEFT_PRIORITY);
   const spread = firstByPriority(activeRoles.filter((role) => markers[role] === "spread"), INITIAL_RIGHT_PRIORITY);
 
