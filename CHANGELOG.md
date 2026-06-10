@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 2026-06-10
+
+#### 행방불명 후속 처리 정비 (커밋 `0532356` "Tune missing mechanic follow-up handling")
+- **발차기 유도 버그 수정(이전 항목의 A·B 해결)**:
+  - 다음 탑 방향을 실제 상태에서 읽도록 변경 — `RaidRoomState`에 `missingBaseIndex`/`missingRotationDirection` 노출, `getTowerPairByRound`가 이를 사용(고정 `base=3`·rotDir 무시 제거).
+  - 미래/과거를 실제 발생값으로 — `lastEvenBossCast`를 노출하고 `getEvenRoundCast`가 이를 읽음(`round%4` 결정론 추측 제거).
+- **위치 규칙 단일 출처 문서**: [`docs/mechanics/missing-position-rules.md`](docs/mechanics/missing-position-rules.md) 추가 — 가이드 봇/공략보기 위치의 source of truth. 홀 탑(쉐어2·부채꼴1·산개1)/짝 탑(부채꼴2·산개2) 구성, 보스·탑 교차점 기반 좌우 배치, 비활성 시계 배치, 발차기 유도 규칙.
+- **위치 로직 재작성**: `missingStrategy.ts`를 위 규칙대로 정밀 재작성(보스/탑 교차점, 탑 경계 0.3m 안쪽 등).
+- **우선순위징(priorityMarker)**: `number1/2`·`forbid1/2` 타입 추가, 마지막 탑에서 `assignFinalPriorityMarkers`로 부여, 머리 위 숫자/금지 아이콘 표시(`PlayerLabel`).
+- **분신 시각화 준비**: `AoeSchema.kind`에 `clone`/`cloneSpot` 추가 및 렌더(`CloneSpot`).
+- 기타: `SimulatorCanvas` 분리, Boss 캐스팅 표시 정리, 카메라/타워/AoE 미세 조정.
+
 ### 2026-06-09
 
 #### 행방불명 공략 시뮬레이션 (가이드 봇 / 공략보기 / 컨트롤 확장)
@@ -15,7 +27,7 @@
 - **시각/표시**: 보스 캐스팅 진행바(`행방불명`/미래/과거), 머리징을 텍스트→도형 아이콘(쉐어/산개/부채꼴), 분신 미끼·발차기 인디케이터, 탑 채움이 `elapsed` 기준이라 일시정지와 함께 멈춤.
 - **수치 튜닝**: 보스 히트박스 6.5m, 탑 8m·중심 8.5m, 쉐어 4.5m·산개 4m, 시작 광역 캐스팅 `MISSING_CAST_MS`.
 - 상세 작업목록: [`docs/mechanics/missing-simulator-worklog.md`](docs/mechanics/missing-simulator-worklog.md), 현황/미구현: [`docs/mechanics/missing-implementation.md`](docs/mechanics/missing-implementation.md)
-- ⚠️ 알려진 점검 필요(미수정): 발차기 유도가 다음 탑 방향을 `base=3` 고정 + rotDir 무시로 추측(`getTowerPairByRound`), 미래/과거를 `round%4` 결정론으로 추측(`getEvenRoundCast`) → 실제 랜덤 상태와 어긋날 수 있음.
+- ⚠️ 알려진 점검 필요: 발차기 유도가 다음 탑 방향을 `base=3` 고정 + rotDir 무시로 추측(`getTowerPairByRound`), 미래/과거를 `round%4` 결정론으로 추측(`getEvenRoundCast`) → 실제 랜덤 상태와 어긋날 수 있음. **(→ 2026-06-10 커밋 `0532356`에서 해결)**
 
 ### 2026-06-08
 
