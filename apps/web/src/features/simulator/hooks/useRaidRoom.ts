@@ -59,6 +59,13 @@ export function useRaidRoom() {
     });
 
     useSimulatorStore.getState().setPlayers(nextPlayers);
+
+    // 자기 캐릭터의 역할(시뮬 내 역할 변경 포함)을 store에 반영한다.
+    const store = useSimulatorStore.getState();
+    const selfSnap = store.sessionId ? nextPlayers[store.sessionId] : undefined;
+    if (selfSnap && store.selfRole !== selfSnap.role) {
+      store.setSelf(store.selfName, selfSnap.role);
+    }
   }, []);
 
   const upsertPlayer = useCallback((player: PlayerSchemaLike, key: string) => {
@@ -84,55 +91,61 @@ export function useRaidRoom() {
     useSimulatorStore.getState().setPlayers(nextPlayers);
   }, []);
 
-  const join = useCallback(
-    async ({ name, role }: JoinOptions) => {
+  const wireRoom = useCallback(
+    (room: Room<RaidRoomStateLike>, role: JoinOptions["role"]) => {
+      roomRef.current = room;
+      setSelfId(room.sessionId);
+      const store = useSimulatorStore.getState();
+      store.setSessionId(room.sessionId);
+      store.setRoomId(room.roomId);
+      store.setSelf("", role);
+      store.setConnectionStatus("connected");
+
+      syncPlayers(room.state);
+      room.state.players?.onAdd?.((player, key) => {
+        if (!isRecord(player)) {
+          return;
+        }
+        upsertPlayer(player, key);
+        player.onChange?.(() => upsertPlayer(player, key));
+      }, true);
+      room.state.players?.onChange?.((player, key) => upsertPlayer(player, key));
+      room.state.players?.onRemove?.((_player, key) => removePlayer(key));
+
+      // 기믹 상태(보스/탑/공격범위/로그)는 패치마다 통째로 스냅샷해 store에 반영.
+      syncGimmick(room.state);
+      room.onStateChange((state) => {
+        syncPlayers(state);
+        syncGimmick(state);
+      });
+
+      room.onLeave(() => {
+        const latest = useSimulatorStore.getState();
+        if (latest.connectionStatus === "connected") {
+          resetNetcode();
+          latest.reset();
+        }
+      });
+      room.onError((_code, message) => {
+        const latest = useSimulatorStore.getState();
+        latest.setConnectionStatus("error");
+        latest.setErrorMessage(message || "서버 오류가 발생했습니다.");
+      });
+    },
+    [syncPlayers, upsertPlayer, removePlayer]
+  );
+
+  const connect = useCallback(
+    async (role: JoinOptions["role"], open: (client: Client) => Promise<Room<RaidRoomStateLike>>) => {
       const store = useSimulatorStore.getState();
       store.setConnectionStatus("connecting");
       store.setErrorMessage(null);
-
       try {
         await roomRef.current?.leave();
         resetNetcode();
-
         const client = new Client(SERVER_URL);
-        const room = await client.joinOrCreate<RaidRoomStateLike>("raid_room", { name, role });
-        roomRef.current = room;
-
-        setSelfId(room.sessionId);
-        store.setSessionId(room.sessionId);
-        store.setSelf(name, role);
-        store.setConnectionStatus("connected");
-
-        syncPlayers(room.state);
-        room.state.players?.onAdd?.((player, key) => {
-          if (!isRecord(player)) {
-            return;
-          }
-          upsertPlayer(player, key);
-          player.onChange?.(() => upsertPlayer(player, key));
-        }, true);
-        room.state.players?.onChange?.((player, key) => upsertPlayer(player, key));
-        room.state.players?.onRemove?.((_player, key) => removePlayer(key));
-
-        // 기믹 상태(보스/탑/공격범위/로그)는 패치마다 통째로 스냅샷해 store에 반영.
-        syncGimmick(room.state);
-        room.onStateChange((state) => {
-          syncPlayers(state);
-          syncGimmick(state);
-        });
-
-        room.onLeave(() => {
-          const latest = useSimulatorStore.getState();
-          if (latest.connectionStatus === "connected") {
-            resetNetcode();
-            latest.reset();
-          }
-        });
-        room.onError((_code, message) => {
-          const latest = useSimulatorStore.getState();
-          latest.setConnectionStatus("error");
-          latest.setErrorMessage(message || "서버 오류가 발생했습니다.");
-        });
+        const room = await open(client);
+        wireRoom(room, role);
       } catch (error) {
         roomRef.current = null;
         const message = error instanceof Error ? error.message : "서버에 연결할 수 없습니다.";
@@ -142,8 +155,23 @@ export function useRaidRoom() {
         throw new Error(message);
       }
     },
-    [syncPlayers]
+    [wireRoom]
   );
+
+  const createRoom = useCallback(
+    (role: JoinOptions["role"]) => connect(role, (client) => client.create<RaidRoomStateLike>("raid_room", { role })),
+    [connect]
+  );
+
+  const joinRoom = useCallback(
+    (code: string, role: JoinOptions["role"]) =>
+      connect(role, (client) => client.joinById<RaidRoomStateLike>(code.trim(), { role })),
+    [connect]
+  );
+
+  const setRole = useCallback((role: JoinOptions["role"]) => {
+    roomRef.current?.send("setRole", { role });
+  }, []);
 
   const leave = useCallback(async () => {
     const room = roomRef.current;
@@ -162,7 +190,9 @@ export function useRaidRoom() {
   }, []);
 
   return {
-    join,
+    createRoom,
+    joinRoom,
+    setRole,
     leave,
     sendInput,
     sendGimmick,

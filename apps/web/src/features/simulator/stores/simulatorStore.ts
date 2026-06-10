@@ -44,6 +44,7 @@ const initialGimmick: GimmickView = {
 
 type SimulatorState = {
   sessionId: string | null;
+  roomId: string | null;
   players: Record<string, PlayerSnapshot>;
   selfRole: PlayerRole | null;
   selfName: string;
@@ -55,6 +56,7 @@ type SimulatorState = {
 
 type SimulatorActions = {
   setSessionId: (sessionId: string | null) => void;
+  setRoomId: (roomId: string | null) => void;
   setPlayers: (players: Record<string, PlayerSnapshot>) => void;
   setSelf: (name: string, role: PlayerRole | null) => void;
   setCameraYaw: (cameraYaw: number) => void;
@@ -66,6 +68,7 @@ type SimulatorActions = {
 
 const initialState: SimulatorState = {
   sessionId: null,
+  roomId: null,
   players: {},
   selfRole: null,
   selfName: "",
@@ -78,6 +81,7 @@ const initialState: SimulatorState = {
 export const useSimulatorStore = create<SimulatorState & SimulatorActions>((set) => ({
   ...initialState,
   setSessionId: (sessionId) => set({ sessionId }),
+  setRoomId: (roomId) => set({ roomId }),
   setPlayers: (players) => set({ players }),
   setSelf: (selfName, selfRole) => set({ selfName, selfRole }),
   setCameraYaw: (cameraYaw) => set({ cameraYaw }),

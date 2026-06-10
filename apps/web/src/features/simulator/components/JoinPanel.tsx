@@ -4,91 +4,102 @@ import { PLAYER_ROLES, type PlayerRole } from "@raid-simulator/shared";
 type JoinPanelProps = {
   connectionStatus: string;
   errorMessage: string | null;
-  occupiedRoles: PlayerRole[];
-  simulationRunning?: boolean;
-  onJoin: (name: string, role: PlayerRole) => Promise<void>;
+  initialCode?: string;
+  onCreate: (role: PlayerRole) => void;
+  onJoinByCode: (code: string, role: PlayerRole) => void;
   onScenarioStart: (role: PlayerRole) => void;
 };
 
 export function JoinPanel({
   connectionStatus,
   errorMessage,
-  occupiedRoles,
-  simulationRunning = false,
-  onJoin,
+  initialCode = "",
+  onCreate,
+  onJoinByCode,
   onScenarioStart
 }: JoinPanelProps) {
   const [role, setRole] = useState<PlayerRole | null>(null);
+  const [code, setCode] = useState(initialCode);
   const [localError, setLocalError] = useState<string | null>(null);
   const isConnecting = connectionStatus === "connecting";
 
   useEffect(() => {
-    if (role && occupiedRoles.includes(role)) {
-      setRole(null);
+    if (initialCode) {
+      setCode(initialCode);
     }
-  }, [occupiedRoles, role]);
+  }, [initialCode]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function requireRole(): PlayerRole | null {
     setLocalError(null);
-
-    if (simulationRunning) {
-      setLocalError("시뮬레이션 진행 중에는 입장할 수 없습니다. 중단 후 다시 시도해주세요.");
-      return;
-    }
     if (!role) {
       setLocalError("역할을 선택해주세요.");
-      return;
+      return null;
     }
-    if (occupiedRoles.includes(role)) {
-      setLocalError("이미 접속중인 역할입니다.");
-      return;
-    }
+    return role;
+  }
 
-    await onJoin("", role);
+  function handleCreate() {
+    const picked = requireRole();
+    if (picked) onCreate(picked);
+  }
+
+  function handleJoin() {
+    const picked = requireRole();
+    if (!picked) return;
+    if (!code.trim()) {
+      setLocalError("방 코드를 입력해주세요.");
+      return;
+    }
+    onJoinByCode(code.trim(), picked);
   }
 
   return (
-    <form className="join-panel" onSubmit={handleSubmit}>
+    <form className="join-panel" onSubmit={(event) => event.preventDefault()}>
       <h1>DMU simulator</h1>
-      <p>역할을 골라서 참여해주세요.</p>
-
-      {simulationRunning && (
-        <div className="join-blocked">시뮬레이션 진행 중 — 중단되면 입장할 수 있어요. (공략 보기는 가능)</div>
-      )}
+      <p>역할을 고르고, 방을 만들거나 코드로 참여하세요.</p>
 
       <div className="role-grid" aria-label="역할 선택">
-        {PLAYER_ROLES.map((playerRole) => {
-          const occupied = occupiedRoles.includes(playerRole);
-          return (
-            <button
-              className={`role-button${role === playerRole ? " selected" : ""}${occupied ? " occupied" : ""}`}
-              key={playerRole}
-              type="button"
-              onClick={() => setRole(playerRole)}
-              disabled={isConnecting || occupied}
-              title={occupied ? "이미 접속중인 역할" : undefined}
-            >
-              {playerRole}
-            </button>
-          );
-        })}
+        {PLAYER_ROLES.map((playerRole) => (
+          <button
+            className={`role-button${role === playerRole ? " selected" : ""}`}
+            key={playerRole}
+            type="button"
+            onClick={() => setRole(playerRole)}
+            disabled={isConnecting}
+          >
+            {playerRole}
+          </button>
+        ))}
       </div>
 
-      <button className="join-button" type="submit" disabled={isConnecting || simulationRunning}>
-        {isConnecting ? "참여 중..." : simulationRunning ? "진행 중 — 입장 불가" : "참여하기"}
-      </button>
+      <label className="field-label" htmlFor="room-code">
+        방 코드 (참여 시)
+      </label>
+      <input
+        id="room-code"
+        className="code-input"
+        value={code}
+        onChange={(event) => setCode(event.target.value)}
+        placeholder="초대 코드 입력"
+        autoComplete="off"
+        disabled={isConnecting}
+      />
+
+      <div className="join-actions">
+        <button className="join-button" type="button" onClick={handleCreate} disabled={isConnecting}>
+          {isConnecting ? "연결 중..." : "방 만들기"}
+        </button>
+        <button className="join-button secondary" type="button" onClick={handleJoin} disabled={isConnecting}>
+          코드로 참여
+        </button>
+      </div>
 
       <button
         className="guide-button"
         type="button"
         onClick={() => {
-          setLocalError(null);
-          if (!role) {
-            setLocalError("역할을 선택해주세요.");
-            return;
-          }
-          onScenarioStart(role);
+          const picked = requireRole();
+          if (picked) onScenarioStart(picked);
         }}
         disabled={isConnecting}
       >

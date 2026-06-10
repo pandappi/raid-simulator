@@ -1,27 +1,17 @@
 import colyseus, { type Client } from "colyseus";
-import { isPlayerRole, MAX_INPUT_DT, type JoinOptions } from "@raid-simulator/shared";
+import { isPlayerRole, MAX_INPUT_DT, type JoinOptions, type PlayerRole } from "@raid-simulator/shared";
 import { PlayerSchema } from "../schemas/PlayerSchema.js";
 import { RaidRoomState } from "../schemas/RaidRoomState.js";
 import { isClientInput, ROLE_INITIAL_POSITIONS, updatePlayerPosition } from "../utils/movement.js";
 import { validateJoinOptions } from "../utils/validateJoinOptions.js";
 import { GimmickController } from "../gimmick/GimmickController.js";
-import { BotController } from "../bots/BotController.js";
+import { BotController, isBotId } from "../bots/BotController.js";
 
 const { Room } = colyseus;
 
 // 기믹 타임라인 진행용 틱 간격(ms). 이동은 명령 기반이라 이 틱은 시간 진행에만 쓴다.
 const GIMMICK_TICK_MS = 50;
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
-const occupiedHumanRoles = new Set<JoinOptions["role"]>();
-let simulationRunning = false;
-
-export function getOccupiedHumanRoles(): JoinOptions["role"][] {
-  return [...occupiedHumanRoles];
-}
-
-export function isSimulationRunning(): boolean {
-  return simulationRunning;
-}
 
 export class RaidRoom extends Room<RaidRoomState> {
   private gimmick!: GimmickController;
@@ -30,6 +20,8 @@ export class RaidRoom extends Room<RaidRoomState> {
 
   onCreate() {
     this.maxClients = 8;
+    // 비공개 방: 자동 매칭(joinOrCreate)으로 섞이지 않고, 방 코드(roomId)로만 입장.
+    this.setPrivate(true);
     this.setState(new RaidRoomState());
     this.gimmick = new GimmickController(this.state);
     this.bots = new BotController(this.state);
@@ -84,13 +76,44 @@ export class RaidRoom extends Room<RaidRoomState> {
       }
     });
 
+    // 시뮬레이터 안에서 역할군 변경(진행 중에는 불가).
+    this.onMessage("setRole", (client, payload) => {
+      if (this.state.gimmickPhase === "running") {
+        return;
+      }
+      if (!isRecord(payload) || !isPlayerRole(payload.role)) {
+        return;
+      }
+      const role = payload.role as PlayerRole;
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.role === role) {
+        return;
+      }
+      // 다른 '사람'이 이미 그 역할이면 거부(봇이 점유 중이면 봇을 비운다).
+      for (const [id, other] of this.state.players.entries()) {
+        if (id !== client.sessionId && !isBotId(id) && other.role === role) {
+          return;
+        }
+      }
+      this.bots.removeBotForRole(role);
+      player.role = role;
+      const position = ROLE_INITIAL_POSITIONS[role];
+      player.x = position.x;
+      player.z = position.z;
+      player.rotation = Math.PI;
+      player.lastSeq = 0;
+      player.marker = "";
+      player.markerVisible = false;
+      player.priorityMarker = "";
+      player.markerCount = 0;
+    });
+
     // 기믹 타임라인 진행.
     this.setSimulationInterval((dt) => {
       if (!this.state.paused && this.state.gimmickPhase === "running") {
         this.bots.update(dt);
       }
       this.gimmick.update(dt);
-      simulationRunning = this.state.gimmickPhase === "running";
       this.disconnectIdleClients();
     }, GIMMICK_TICK_MS);
   }
@@ -112,23 +135,16 @@ export class RaidRoom extends Room<RaidRoomState> {
     player.z = initialPosition.z;
 
     this.state.players.set(client.sessionId, player);
-    occupiedHumanRoles.add(joinOptions.role);
     this.lastInputAtByClient.set(client.sessionId, Date.now());
   }
 
   onLeave(client: Client) {
-    const player = this.state.players.get(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.lastInputAtByClient.delete(client.sessionId);
-    if (player && isPlayerRole(player.role)) {
-      occupiedHumanRoles.delete(player.role);
-    }
   }
 
   onDispose() {
-    occupiedHumanRoles.clear();
     this.lastInputAtByClient.clear();
-    simulationRunning = false;
   }
 
   private disconnectIdleClients() {

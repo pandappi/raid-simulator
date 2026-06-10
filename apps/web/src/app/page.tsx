@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { isPlayerRole, type PlayerRole } from "@raid-simulator/shared";
+import type { PlayerRole } from "@raid-simulator/shared";
 import { JoinPanel } from "@/features/simulator/components/JoinPanel";
 import { ConnectionOverlay } from "@/features/simulator/components/ConnectionOverlay";
 import { GimmickPanel } from "@/features/simulator/components/GimmickPanel";
@@ -16,8 +16,6 @@ const SimulatorCanvas = dynamic(
   () => import("@/features/simulator/components/SimulatorCanvas").then((module) => module.SimulatorCanvas),
   { ssr: false }
 );
-const GAME_SERVER_URL = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "ws://localhost:2567";
-const GAME_SERVER_HTTP_URL = GAME_SERVER_URL.replace(/^ws/, "http");
 const PHASE_LABEL: Record<string, string> = {
   idle: "대기",
   running: "진행 중",
@@ -26,10 +24,11 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export default function Home() {
-  const { join, leave, sendInput, sendGimmick } = useRaidRoom();
+  const { createRoom, joinRoom, setRole, leave, sendInput, sendGimmick } = useRaidRoom();
   const connectionStatus = useSimulatorStore((state) => state.connectionStatus);
   const errorMessage = useSimulatorStore((state) => state.errorMessage);
   const sessionId = useSimulatorStore((state) => state.sessionId);
+  const roomId = useSimulatorStore((state) => state.roomId);
   const selfName = useSimulatorStore((state) => state.selfName);
   const selfRole = useSimulatorStore((state) => state.selfRole);
   const players = useSimulatorStore((state) => state.players);
@@ -38,61 +37,51 @@ export default function Home() {
   const [scenarioMode, setScenarioMode] = useState(false);
   const [scenarioPaused, setScenarioPaused] = useState(false);
   const [scenarioFocusRole, setScenarioFocusRole] = useState<PlayerRole | null>(null);
-  const [occupiedRoles, setOccupiedRoles] = useState<PlayerRole[]>([]);
-  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [initialCode, setInitialCode] = useState("");
 
   const isConnected = connectionStatus === "connected";
   const isInSimulator = isConnected || scenarioMode;
   const playerCount = useMemo(() => Object.keys(players).length, [players]);
-  // 실패로 중단되면 플레이어 컨트롤(입력/예측)을 멈춘다.
   const controlsLocked = gimmick.controlsLocked;
+  const gimmickRunning = gimmick.phase === "running";
+  // 시뮬 내 역할 변경 시 다른 참가자가 점유한 역할(자기 제외).
+  const occupiedByOthers = useMemo(
+    () => Object.values(players).filter((p) => p.id !== sessionId).map((p) => p.role),
+    [players, sessionId]
+  );
 
   useScenarioPlayback(scenarioMode, scenarioPaused, scenarioFocusRole);
   useKeyboardInput({ enabled: isConnected && !scenarioMode && !controlsLocked });
   usePrediction({ enabled: isConnected && !scenarioMode && !controlsLocked, sendInput });
 
+  // 초대 링크(?room=코드)로 들어오면 코드를 미리 채운다.
   useEffect(() => {
-    if (isInSimulator) {
-      return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("room");
+    if (code) {
+      setInitialCode(code.trim());
     }
+  }, []);
 
-    let cancelled = false;
-    async function loadOccupiedRoles() {
-      try {
-        const response = await fetch(`${GAME_SERVER_HTTP_URL}/state`, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error("failed");
-        }
-        const data = (await response.json()) as { occupiedRoles?: unknown; running?: unknown };
-        const nextRoles = Array.isArray(data.occupiedRoles) ? data.occupiedRoles.filter(isPlayerRole) : [];
-        if (!cancelled) {
-          setOccupiedRoles(nextRoles);
-          setSimulationRunning(data.running === true);
-        }
-      } catch {
-        if (!cancelled) {
-          setOccupiedRoles([]);
-          setSimulationRunning(false);
-        }
-      }
-    }
-
-    loadOccupiedRoles();
-    const interval = window.setInterval(loadOccupiedRoles, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [isInSimulator]);
-
-  async function handleJoin(name: string, role: PlayerRole) {
+  async function handleCreate(role: PlayerRole) {
     setScenarioMode(false);
     setJoinError(null);
     setScenarioFocusRole(null);
     try {
-      await join({ name, role });
+      await createRoom(role);
     } catch (error) {
-      setJoinError(error instanceof Error ? error.message : "서버에 연결할 수 없습니다.");
+      setJoinError(error instanceof Error ? error.message : "방을 만들 수 없습니다.");
+    }
+  }
+
+  async function handleJoinByCode(code: string, role: PlayerRole) {
+    setScenarioMode(false);
+    setJoinError(null);
+    setScenarioFocusRole(null);
+    try {
+      await joinRoom(code, role);
+    } catch (error) {
+      setJoinError(error instanceof Error ? error.message : "방에 참여할 수 없습니다.");
     }
   }
 
@@ -112,9 +101,9 @@ export default function Home() {
         <JoinPanel
           connectionStatus={connectionStatus}
           errorMessage={joinError ?? errorMessage}
-          occupiedRoles={occupiedRoles}
-          simulationRunning={simulationRunning}
-          onJoin={handleJoin}
+          initialCode={initialCode}
+          onCreate={handleCreate}
+          onJoinByCode={handleJoinByCode}
           onScenarioStart={(role) => {
             setJoinError(null);
             setScenarioPaused(false);
@@ -130,9 +119,13 @@ export default function Home() {
     <main className="simulator-screen">
       <SimulatorCanvas />
       <ConnectionOverlay
-        name={scenarioMode ? `${scenarioFocusRole ?? ""} 공략보기` : selfName}
+        name={scenarioMode ? `${scenarioFocusRole ?? ""} 공략보기` : selfName || "플레이어"}
         role={scenarioMode ? scenarioFocusRole : selfRole}
+        roomId={scenarioMode ? null : roomId}
         controlsLocked={!scenarioMode && controlsLocked}
+        canChangeRole={!scenarioMode && !gimmickRunning}
+        occupiedRoles={occupiedByOthers}
+        onChangeRole={setRole}
         sessionId={scenarioMode ? "scenario" : sessionId}
         playerCount={playerCount}
         status={scenarioMode ? "auto" : connectionStatus}
