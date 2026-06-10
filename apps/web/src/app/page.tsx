@@ -39,14 +39,17 @@ export default function Home() {
   const [scenarioPaused, setScenarioPaused] = useState(false);
   const [scenarioFocusRole, setScenarioFocusRole] = useState<PlayerRole | null>(null);
   const [occupiedRoles, setOccupiedRoles] = useState<PlayerRole[]>([]);
+  const [simulationRunning, setSimulationRunning] = useState(false);
 
   const isConnected = connectionStatus === "connected";
   const isInSimulator = isConnected || scenarioMode;
   const playerCount = useMemo(() => Object.keys(players).length, [players]);
+  // 실패로 중단되면 플레이어 컨트롤(입력/예측)을 멈춘다.
+  const controlsLocked = gimmick.controlsLocked;
 
   useScenarioPlayback(scenarioMode, scenarioPaused, scenarioFocusRole);
-  useKeyboardInput({ enabled: isConnected && !scenarioMode });
-  usePrediction({ enabled: isConnected && !scenarioMode, sendInput });
+  useKeyboardInput({ enabled: isConnected && !scenarioMode && !controlsLocked });
+  usePrediction({ enabled: isConnected && !scenarioMode && !controlsLocked, sendInput });
 
   useEffect(() => {
     if (isInSimulator) {
@@ -60,14 +63,16 @@ export default function Home() {
         if (!response.ok) {
           throw new Error("failed");
         }
-        const data = (await response.json()) as { occupiedRoles?: unknown };
+        const data = (await response.json()) as { occupiedRoles?: unknown; running?: unknown };
         const nextRoles = Array.isArray(data.occupiedRoles) ? data.occupiedRoles.filter(isPlayerRole) : [];
         if (!cancelled) {
           setOccupiedRoles(nextRoles);
+          setSimulationRunning(data.running === true);
         }
       } catch {
         if (!cancelled) {
           setOccupiedRoles([]);
+          setSimulationRunning(false);
         }
       }
     }
@@ -108,6 +113,7 @@ export default function Home() {
           connectionStatus={connectionStatus}
           errorMessage={joinError ?? errorMessage}
           occupiedRoles={occupiedRoles}
+          simulationRunning={simulationRunning}
           onJoin={handleJoin}
           onScenarioStart={(role) => {
             setJoinError(null);
@@ -125,7 +131,8 @@ export default function Home() {
       <SimulatorCanvas />
       <ConnectionOverlay
         name={scenarioMode ? `${scenarioFocusRole ?? ""} 공략보기` : selfName}
-        role={selfRole}
+        role={scenarioMode ? scenarioFocusRole : selfRole}
+        controlsLocked={!scenarioMode && controlsLocked}
         sessionId={scenarioMode ? "scenario" : sessionId}
         playerCount={playerCount}
         status={scenarioMode ? "auto" : connectionStatus}

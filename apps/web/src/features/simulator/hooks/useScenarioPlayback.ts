@@ -312,6 +312,7 @@ function updateScenario(elapsed: number, focusRole: PlayerRole | null, paused: b
     round,
     elapsed,
     paused,
+    controlsLocked: false,
     bossActive: true,
     bossCast: getBossCast(elapsed, scenario),
     towers: getTowers(elapsed, scenario),

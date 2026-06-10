@@ -7,6 +7,14 @@
 
 ### 2026-06-10
 
+#### 행방불명 시뮬레이션 동작/UX 보완
+- **봇 이동 속도**를 플레이어와 동일(`PLAYER_MOVE_SPEED`)하게 — 시작 시 먼 대형에서도 탑까지 제때 도달.
+- **탑 간격을 작동시간과 동일(`TOWER_INTERVAL_MS` 10s→8s)** — 탑 판정과 동시에 다음 탑이 즉시 등장(공격 범위 주황 장판도 판정 즉시 표시).
+- **실패 중단 시 플레이어/봇 컨트롤 정지** — `RaidRoomState.controlsLocked` 추가, 실패 중단 시 서버가 이동 입력을 무시하고 클라가 입력/예측을 비활성화(중단/재시작 시 해제).
+- **진행 중 입장 차단** — `validateJoinOptions`가 `gimmickPhase==="running"`이면 입장 거부, `GET /state`에 `running` 노출, 로비에서 안내·버튼 비활성화. 중단 상태에서만 입장 가능.
+- **내 역할(역할군) 표기** — 오버레이에 컨트롤 중인 역할 + 역할군(탱커/힐러/근딜/원딜) 배지.
+- (확인) 범위 공격 2개 이상 중첩 피격 시 실패 처리는 기존 `resolveMarkerAttacks`에 이미 구현됨.
+
 #### 행방불명 후속 처리 정비 (커밋 `0532356` "Tune missing mechanic follow-up handling")
 - **발차기 유도 버그 수정(이전 항목의 A·B 해결)**:
   - 다음 탑 방향을 실제 상태에서 읽도록 변경 — `RaidRoomState`에 `missingBaseIndex`/`missingRotationDirection` 노출, `getTowerPairByRound`가 이를 사용(고정 `base=3`·rotDir 무시 제거).

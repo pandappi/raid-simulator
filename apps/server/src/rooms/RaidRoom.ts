@@ -13,9 +13,14 @@ const { Room } = colyseus;
 const GIMMICK_TICK_MS = 50;
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const occupiedHumanRoles = new Set<JoinOptions["role"]>();
+let simulationRunning = false;
 
 export function getOccupiedHumanRoles(): JoinOptions["role"][] {
   return [...occupiedHumanRoles];
+}
+
+export function isSimulationRunning(): boolean {
+  return simulationRunning;
 }
 
 export class RaidRoom extends Room<RaidRoomState> {
@@ -37,6 +42,11 @@ export class RaidRoom extends Room<RaidRoomState> {
         return;
       }
       this.lastInputAtByClient.set(client.sessionId, Date.now());
+
+      // 실패로 중단된 상태에서는 모든 이동 입력을 무시한다(컨트롤 정지).
+      if (this.state.controlsLocked) {
+        return;
+      }
 
       // 비정상/과도한 이동을 막기 위해 dt를 상한으로 클램프한다.
       const dt = typeof payload.dt === "number" ? Math.min(Math.max(payload.dt, 0), MAX_INPUT_DT) : 0;
@@ -80,6 +90,7 @@ export class RaidRoom extends Room<RaidRoomState> {
         this.bots.update(dt);
       }
       this.gimmick.update(dt);
+      simulationRunning = this.state.gimmickPhase === "running";
       this.disconnectIdleClients();
     }, GIMMICK_TICK_MS);
   }
@@ -117,6 +128,7 @@ export class RaidRoom extends Room<RaidRoomState> {
   onDispose() {
     occupiedHumanRoles.clear();
     this.lastInputAtByClient.clear();
+    simulationRunning = false;
   }
 
   private disconnectIdleClients() {

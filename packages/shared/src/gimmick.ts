@@ -14,7 +14,7 @@ export const BOSS_RADIUS = 6.5; // 히트박스 반지름(지름 13m)
 export const TOWER_RADIUS = 4; // 판정 반지름(지름 8m)
 export const TOWER_DISTANCE = 8.5; // 중심에서 탑까지 거리
 export const TOWER_ACTIVATE_MS = 8000; // 생성 후 작동까지
-export const TOWER_INTERVAL_MS = 10000; // 탑 등장 간격
+export const TOWER_INTERVAL_MS = 8000; // 탑 등장 간격(= 작동시간: 이전 탑 판정과 동시에 다음 탑 등장)
 export const TOWER_ROUNDS = 8; // 총 반복 횟수
 export const TOWER_REQUIRED_OCCUPANTS = 2; // 탑당 정원
 

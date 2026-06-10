@@ -25,6 +25,11 @@ export function validateJoinOptions(options: unknown, state: RaidRoomState): Val
     throw new Error("역할을 선택해주세요.");
   }
 
+  // 시뮬레이션 진행 중에는 입장 불가. 중단된 뒤에만 입장 허용.
+  if (state.gimmickPhase === "running") {
+    throw new Error("시뮬레이션 진행 중에는 입장할 수 없습니다. 중단 후 다시 시도해주세요.");
+  }
+
   // 이름은 선택값. 비워두면 역할명으로 식별한다.
   const name = rawName || role;
 

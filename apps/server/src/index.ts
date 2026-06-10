@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
 import colyseus from "colyseus";
-import { getOccupiedHumanRoles, RaidRoom } from "./rooms/RaidRoom.js";
+import { getOccupiedHumanRoles, isSimulationRunning, RaidRoom } from "./rooms/RaidRoom.js";
 
 const { Server } = colyseus;
 
@@ -21,7 +21,7 @@ app.get("/", (_request, response) => {
   response.send("Raid simulator server is running.");
 });
 app.get("/state", (_request, response) => {
-  response.json({ occupiedRoles: getOccupiedHumanRoles() });
+  response.json({ occupiedRoles: getOccupiedHumanRoles(), running: isSimulationRunning() });
 });
 
 const server = createServer(app);

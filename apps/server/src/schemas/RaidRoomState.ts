@@ -18,6 +18,8 @@ export class RaidRoomState extends Schema {
   @type("number") missingRotationDirection = 1;
   @type("number") elapsed = 0; // 기믹 시작 후 경과(ms)
   @type("boolean") paused = false;
+  // 실패로 중단된 경우 플레이어/봇 이동을 막는다(시작/중단 시 해제).
+  @type("boolean") controlsLocked = false;
   @type({ map: TowerSchema }) towers = new MapSchema<TowerSchema>();
   @type([AoeSchema]) aoes = new ArraySchema<AoeSchema>();
   @type(["string"]) logs = new ArraySchema<string>();

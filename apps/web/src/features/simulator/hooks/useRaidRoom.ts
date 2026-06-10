@@ -212,6 +212,7 @@ function syncGimmick(state: unknown) {
     round: Number(s.round) || 0,
     elapsed: Number(s.elapsed) || 0,
     paused: s.paused === true,
+    controlsLocked: s.controlsLocked === true,
     bossActive: s.bossActive === true,
     bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
     towers,

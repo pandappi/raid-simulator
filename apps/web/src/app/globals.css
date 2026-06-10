@@ -215,6 +215,52 @@ input {
   line-height: 1.45;
 }
 
+/* 내 역할(역할군) 표기 */
+.my-role {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(116, 192, 252, 0.16);
+  border: 1px solid rgba(116, 192, 252, 0.4);
+}
+.my-role-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.my-role-value {
+  font-size: 15px;
+  font-weight: 900;
+  color: #cfe8ff;
+}
+
+.overlay-locked {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.18);
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  color: #ffb4b4;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.join-blocked {
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 212, 59, 0.14);
+  border: 1px solid rgba(255, 212, 59, 0.4);
+  color: #ffe08a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .status-dot {
   display: inline-block;
   width: 8px;

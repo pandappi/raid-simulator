@@ -126,6 +126,7 @@ export class GimmickController {
     this.stopOnFailure = false;
     this.stoppedByFailure = false;
     this.state.paused = false;
+    this.state.controlsLocked = false;
     this.state.towers.clear();
     this.state.aoes.splice(0, this.state.aoes.length);
     this.state.logs.splice(0, this.state.logs.length);
@@ -529,7 +530,8 @@ export class GimmickController {
       this.state.paused = false;
       this.state.gimmickPhase = "failed";
       this.state.bossCast = "";
-      this.log("기믹 중단: 실패시 중단 옵션");
+      this.state.controlsLocked = true;
+      this.log("기믹 중단: 실패시 중단 옵션 (플레이어 컨트롤 정지)");
     }
   }
 

@@ -4,6 +4,7 @@ import {
   getMissingStrategyTarget,
   isPlayerRole,
   MISSING_CAST_MS,
+  PLAYER_MOVE_SPEED,
   PLAYER_ROLES,
   TOWER_ACTIVATE_MS,
   TOWER_DISTANCE,
@@ -20,7 +21,8 @@ import { PlayerSchema } from "../schemas/PlayerSchema.js";
 type Vec2 = { x: number; z: number };
 
 const BOT_PREFIX = "bot-";
-const BOT_SPEED = 3.8;
+// 플레이어와 동일한 속도. 첫 이동(먼 시작 대형 → 탑)도 락 시간 안에 도달하도록.
+const BOT_SPEED = PLAYER_MOVE_SPEED;
 const TOWER_POSITION_LOCK_MS = 1500;
 const FIRST_MARKER_MOVE_DELAY_MS = 1000;
 const WANDER_START_MS = MISSING_CAST_MS + FIRST_MARKER_MOVE_DELAY_MS;
