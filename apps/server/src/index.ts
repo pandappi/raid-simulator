@@ -27,5 +27,6 @@ const gameServer = new Server({ server });
 gameServer.define("raid_room", RaidRoom);
 
 gameServer.listen(PORT).then(() => {
-  console.log(`Raid simulator server listening on ws://localhost:${PORT}`);
+  // 이 줄은 콜드 스타트 + 슬립에서 깨어날 때(프로세스 재시작) 모두 출력된다.
+  console.log(`[서버] 시작/깨어남 — 포트 ${PORT} 리슨`);
 });

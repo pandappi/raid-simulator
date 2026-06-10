@@ -40,6 +40,7 @@ export class RaidRoom extends Room<RaidRoomState> {
     }
     activeRoomCount += 1;
     this.counted = true;
+    srvLog("방생성", `id=${this.roomId} | 방수=${activeRoomCount}/${MAX_ROOMS}`);
 
     this.maxClients = 8;
     // 비공개 방: 자동 매칭(joinOrCreate)으로 섞이지 않고, 방 코드(roomId)로만 입장.
@@ -160,11 +161,17 @@ export class RaidRoom extends Room<RaidRoomState> {
 
     this.state.players.set(client.sessionId, player);
     this.lastInputAtByClient.set(client.sessionId, Date.now());
+    srvLog(
+      "입장",
+      `id=${this.roomId} | 역할=${joinOptions.role} | 인원=${this.humanCount()}/8 | 방수=${activeRoomCount}/${MAX_ROOMS}`
+    );
   }
 
   onLeave(client: Client) {
+    const role = this.state.players.get(client.sessionId)?.role ?? "?";
     this.state.players.delete(client.sessionId);
     this.lastInputAtByClient.delete(client.sessionId);
+    srvLog("퇴장", `id=${this.roomId} | 역할=${role} | 인원=${this.humanCount()}/8`);
   }
 
   onDispose() {
@@ -173,6 +180,15 @@ export class RaidRoom extends Room<RaidRoomState> {
       activeRoomCount -= 1;
       this.counted = false;
     }
+    srvLog("방삭제", `id=${this.roomId} | 방수=${activeRoomCount}/${MAX_ROOMS}`);
+  }
+
+  private humanCount(): number {
+    let count = 0;
+    for (const id of this.state.players.keys()) {
+      if (!isBotId(id)) count += 1;
+    }
+    return count;
   }
 
   // 방 수명(15분) 관리 + 남은 시간 표시. 만료 시 전원 연결 해제 → 빈 방은 자동 삭제(autoDispose).
@@ -187,6 +203,7 @@ export class RaidRoom extends Room<RaidRoomState> {
     }
     if (this.roomAgeMs >= ROOM_LIFETIME_MS) {
       this.expired = true;
+      srvLog("만료", `id=${this.roomId} | 15분 경과 — 연결 해제 ${this.clients.length}명`);
       for (const client of this.clients) {
         client.leave(ROOM_EXPIRED_CODE);
       }
@@ -198,10 +215,16 @@ export class RaidRoom extends Room<RaidRoomState> {
     for (const client of this.clients) {
       const lastInputAt = this.lastInputAtByClient.get(client.sessionId) ?? now;
       if (now - lastInputAt >= IDLE_TIMEOUT_MS) {
+        srvLog("유휴퇴장", `id=${this.roomId} | client=${client.sessionId.slice(0, 6)} | 3분 무입력`);
         client.leave(4000);
       }
     }
   }
+}
+
+// Render Logs에서 한눈에 보이도록 한글 태그로 통일. (타임스탬프는 Render가 자동 부착)
+function srvLog(tag: string, detail: string) {
+  console.log(`[${tag}] ${detail}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
