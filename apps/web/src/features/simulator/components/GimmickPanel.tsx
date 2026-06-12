@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { GIMMICKS, type GimmickId } from "@raid-simulator/shared";
 import { useSimulatorStore } from "../stores/simulatorStore";
 
 type GimmickPanelProps = {
@@ -9,9 +10,6 @@ type GimmickPanelProps = {
   ) => void;
 };
 
-// 현재는 "행방불명" 한 종류. 추후 추가되면 목록에 넣는다.
-const GIMMICKS = [{ id: "missing", name: "행방불명" }];
-
 const PHASE_LABEL: Record<string, string> = {
   idle: "대기",
   running: "진행 중",
@@ -21,15 +19,21 @@ const PHASE_LABEL: Record<string, string> = {
 
 export function GimmickPanel({ onControl }: GimmickPanelProps) {
   const [stopOnFailure, setStopOnFailure] = useState(true);
+  const [selected, setSelected] = useState<GimmickId>("missing");
   const gimmick = useSimulatorStore((state) => state.gimmick);
-  const selected = GIMMICKS[0]?.id ?? "missing";
   const running = gimmick.phase === "running";
   const paused = gimmick.paused;
+  const liveSupported = GIMMICKS.find((g) => g.id === selected)?.liveSupported ?? false;
 
   return (
     <div className="gimmick-panel">
       <div className="gimmick-row">
-        <select className="gimmick-select" value={selected} disabled onChange={() => undefined}>
+        <select
+          className="gimmick-select"
+          value={selected}
+          onChange={(event) => setSelected(event.target.value as GimmickId)}
+          disabled={running}
+        >
           {GIMMICKS.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
@@ -52,7 +56,7 @@ export function GimmickPanel({ onControl }: GimmickPanelProps) {
         <button
           className="gimmick-button start"
           onClick={() => onControl("practiceStart", selected, { stopOnFailure })}
-          disabled={running}
+          disabled={running || !liveSupported}
         >
           시작
         </button>

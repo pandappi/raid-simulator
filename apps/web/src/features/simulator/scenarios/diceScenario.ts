@@ -1,19 +1,19 @@
-import { PLAYER_ROLES, type PlayerRole } from "@raid-simulator/shared";
-
-// P3 주사위 공략보기(재생). 보스 공격(알테마 블래스터/주사위 유도) 텔레그래프 +
-// 그 안전지대로 서는 위치를 매 판 랜덤 구성에서 '계산'으로 생성한다.
+import {
+  createDiceConfig,
+  DICE_BOSS_RADIUS,
+  DICE_TOTAL_MS,
+  diceAttacks,
+  diceBossPosition,
+  diceLabel,
+  diceRolePosition,
+  diceVisibleAt,
+  PLAYER_ROLES,
+  type DiceAttack,
+  type DiceConfig,
+  type PlayerRole
+} from "@raid-simulator/shared";
 
 type Vec2 = { x: number; z: number };
-export type DiceAttack = {
-  kind: "blaster" | "stack" | "circle" | "rect";
-  x: number;
-  z: number;
-  radius?: number;
-  dir?: number;
-  width?: number;
-  length?: number;
-  danger?: boolean;
-};
 export type DiceSample = {
   positions: Record<PlayerRole, Vec2>;
   attacks: DiceAttack[];
@@ -24,165 +24,25 @@ export type DiceSample = {
   bossZ: number;
   bossRadius: number;
 };
-export type DiceConfig = {
-  bossIndex: number; // 보스가 선 8방향(0=북, 시계 45°)
-  startIndex: number; // 1번 블래스터가 시작되는 외곽 방향
-  rotDir: 1 | -1; // 블래스터 회전 방향
-  diceByRole: Record<PlayerRole, number>; // 역할 → 주사위 1~8
-};
 
-const ARENA = 20;
-const EDGE = 19; // 산개 시 맵 끝(아레나 안쪽)
-const WAY = 13; // 웨이마크 거리(= 보스 위치 거리)
-const BOSS_R = 5; // 보스 반지름(지름 10m)
-const BLAST_W = 8; // 알테마 블래스터/주사위 직선 폭
-const STACK_R = 6; // 연두 장판 반지름
+export { createDiceConfig, DICE_TOTAL_MS };
+export type { DiceConfig };
 
-const FIRST_MS = 3000;
-const GAP_MS = 2000;
-const blastAt = (k: number) => FIRST_MS + (k - 1) * GAP_MS; // #1=3s … #8=17s
-const KNOCK_MS = blastAt(4); // 9s — 4번째 발사 시 넉백
-const DICE_ASSIGN_MS = blastAt(5); // 11s — 5번째 발사 시 주사위 부여
-const GREEN_MS = blastAt(6); // 13s — 6번째 발사 시 연두 장판(중앙 쉐어)
-const DICE_FIRE_START_MS = blastAt(8) + 6000; // 23s — #8 후 6초, #9~16 동시 직선
-const DICE_FIRE_SHOW_MS = 2000; // #9~16 빨간 직선 2초 표시
-export const DICE_TOTAL_MS = DICE_FIRE_START_MS + DICE_FIRE_SHOW_MS + 1500; // ~26.5s
-
-function angleOf(index: number): number {
-  return ((index % 8) + 8) % 8 * (Math.PI / 4);
-}
-function posAngle(angle: number, dist: number): Vec2 {
-  return { x: dist * Math.sin(angle), z: -dist * Math.cos(angle) };
-}
-function add(a: Vec2, b: Vec2): Vec2 {
-  return { x: a.x + b.x, z: a.z + b.z };
-}
-
-export function createDiceConfig(): DiceConfig {
-  const roles = [...PLAYER_ROLES];
-  // 1~8 셔플 → 역할에 배정
-  const nums = [1, 2, 3, 4, 5, 6, 7, 8];
-  for (let i = nums.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const t = nums[i]!;
-    nums[i] = nums[j]!;
-    nums[j] = t;
-  }
-  const diceByRole = {} as Record<PlayerRole, number>;
-  roles.forEach((role, i) => (diceByRole[role] = nums[i]!));
-  return {
-    bossIndex: Math.floor(Math.random() * 8),
-    startIndex: Math.floor(Math.random() * 8),
-    rotDir: Math.random() < 0.5 ? 1 : -1,
-    diceByRole
-  };
-}
-
-// 주사위 d번(1~8)이 서는 맵끝 위치.
-function dicePosition(d: number, config: DiceConfig): Vec2 {
-  const arrivalAngle = angleOf(config.startIndex + 4); // #1 도착점 = 12시
-  const angle = arrivalAngle - config.rotDir * (Math.PI / 8 + (d - 1) * (Math.PI / 4));
-  return posAngle(angle, EDGE);
-}
-
-// 역할별 위치 키프레임(보스 안쪽 → 넉백 → 중앙 쉐어 → 주사위 산개).
-function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: Vec2 }[] {
-  const idx = PLAYER_ROLES.indexOf(role);
-  const off = posAngle((idx / 8) * Math.PI * 2, 1.6); // 겹침 방지용 소폭 오프셋
-  const bossAngle = angleOf(config.bossIndex);
-  const stack = add(posAngle(bossAngle, WAY - BOSS_R), off); // 보스 안쪽 가장자리(중심거리 8m)
-  const knocked = add(posAngle(bossAngle, WAY - BOSS_R - 10), off); // 보스 기준 10m 뒤(중앙 너머)로 강제 넉백
-  const center = add({ x: 0, z: 0 }, off);
-  const dice = dicePosition(config.diceByRole[role], config);
-  return [
-    { t: 0, pos: stack },
-    { t: KNOCK_MS, pos: stack },
-    { t: KNOCK_MS + 500, pos: knocked }, // 빠른 넉백(0.5초)
-    { t: GREEN_MS - 500, pos: center }, // #6 연두 장판 전에 중앙 집결
-    { t: blastAt(8), pos: center },
-    { t: DICE_FIRE_START_MS - 1000, pos: dice },
-    { t: DICE_TOTAL_MS, pos: dice }
-  ];
-}
-
-function lerp(a: Vec2, b: Vec2, f: number): Vec2 {
-  return { x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f };
-}
-function sampleKeyframes(frames: { t: number; pos: Vec2 }[], t: number): Vec2 {
-  if (t <= frames[0]!.t) return frames[0]!.pos;
-  for (let i = 1; i < frames.length; i++) {
-    if (t <= frames[i]!.t) {
-      const a = frames[i - 1]!;
-      const b = frames[i]!;
-      const span = b.t - a.t || 1;
-      return lerp(a.pos, b.pos, (t - a.t) / span);
-    }
-  }
-  return frames[frames.length - 1]!.pos;
-}
-
-function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
-  const attacks: DiceAttack[] = [];
-
-  // 회전 알테마 블래스터(#1~#8): 연보라 꺽쇠 투사체가 외곽→중앙관통→반대끝으로 1초간 이동.
-  for (let k = 1; k <= 8; k++) {
-    const fire = blastAt(k);
-    if (t >= fire && t <= fire + 1000) {
-      const startIdx = config.startIndex + (k - 1) * config.rotDir;
-      const origin = posAngle(angleOf(startIdx), ARENA);
-      const target = posAngle(angleOf(startIdx + 4), ARENA); // 반대편 끝(중앙 관통)
-      const pos = lerp(origin, target, (t - fire) / 1000);
-      const dir = Math.atan2(target.x - origin.x, target.z - origin.z);
-      attacks.push({ kind: "blaster", x: pos.x, z: pos.z, dir, width: BLAST_W });
-    }
-  }
-
-  // 연두 장판(중앙 6m 쉐어) — 6번째 발사 시점.
-  if (t >= GREEN_MS && t <= GREEN_MS + 1500) {
-    attacks.push({ kind: "stack", x: 0, z: 0, radius: STACK_R });
-  }
-
-  // 9~16번째 알테마 블래스터: 시작점을 45°씩(같은 회전방향) 회전시키며, 각 주사위 번호 대상 방향으로
-  // 빨간 직선 범위를 동시에 2초간 표시(투사체 아님). 웨이마크 사이(주사위 위치)가 회피 지점.
-  if (t >= DICE_FIRE_START_MS && t <= DICE_FIRE_START_MS + DICE_FIRE_SHOW_MS) {
-    for (let d = 1; d <= 8; d++) {
-      // 시작점은 블래스터 시작순서의 8→1 순서(= startIndex + (8-d)*rotDir).
-      const start = posAngle(angleOf(config.startIndex + (8 - d) * config.rotDir), ARENA);
-      const target = dicePosition(d, config);
-      const dir = Math.atan2(target.x - start.x, target.z - start.z);
-      attacks.push({ kind: "rect", x: start.x, z: start.z, dir, length: ARENA * 2.2, width: BLAST_W, danger: true });
-    }
-  }
-
-  return attacks;
-}
-
-function labelFor(t: number): string {
-  if (t < blastAt(1)) return "집결 (보스 안쪽)";
-  if (t < KNOCK_MS) return "알테마 블래스터 회전 (#1~#3)";
-  if (t < DICE_ASSIGN_MS) return "4번째 발사 — 보스 기준 10m 넉백";
-  if (t < GREEN_MS) return "5번째 발사 — 주사위 1~8 부여";
-  if (t < blastAt(8)) return "6번째 발사 — 연두 장판 중앙 쉐어 (+#7)";
-  if (t < DICE_FIRE_START_MS) return "#8 후 — 주사위 위치로 산개(웨이마크 사이 맵끝)";
-  return "9~16번 알테마 블래스터 — 주사위 방향 빨간 직선(동시)";
-}
-
+// 공략보기(동선 보기)용: shared 로직을 한 번에 샘플링.
 export function sampleDice(elapsedMs: number, config: DiceConfig): DiceSample {
-  const t = Math.max(0, Math.min(DICE_TOTAL_MS, elapsedMs));
   const positions = {} as Record<PlayerRole, Vec2>;
   for (const role of PLAYER_ROLES) {
-    positions[role] = sampleKeyframes(roleKeyframes(role, config), t);
+    positions[role] = diceRolePosition(role, elapsedMs, config);
   }
-  // 주사위 눈은 5번째 발사(부여) 이후에만 표시.
-  const boss = posAngle(angleOf(config.bossIndex), WAY); // 보스는 웨이마크 위(13m)
+  const boss = diceBossPosition(config);
   return {
     positions,
-    attacks: currentAttacks(t, config),
+    attacks: diceAttacks(elapsedMs, config),
     diceByRole: config.diceByRole,
-    diceVisible: t >= DICE_ASSIGN_MS,
-    label: labelFor(t),
+    diceVisible: diceVisibleAt(elapsedMs),
+    label: diceLabel(elapsedMs),
     bossX: boss.x,
     bossZ: boss.z,
-    bossRadius: BOSS_R
+    bossRadius: DICE_BOSS_RADIUS
   };
 }

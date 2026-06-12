@@ -11,7 +11,7 @@ export type GimmickId = "missing" | "dice";
 // dice(P3 주사위)는 공략보기(재생)만 지원.
 export const GIMMICKS: { id: GimmickId; name: string; liveSupported: boolean }[] = [
   { id: "missing", name: "행방불명", liveSupported: true },
-  { id: "dice", name: "P3 주사위", liveSupported: false }
+  { id: "dice", name: "P3 주사위", liveSupported: true }
 ];
 
 // --- 보스 / 아레나 ---

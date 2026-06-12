@@ -1,8 +1,10 @@
 import {
   directionToPosition,
+  diceRolePosition,
   getMissingGroupOneRoles,
   getMissingStrategyPositions,
   isPlayerRole,
+  type DiceConfig,
   MISSING_CAST_MS,
   PLAYER_MOVE_SPEED,
   PLAYER_ROLES,
@@ -131,6 +133,26 @@ export class BotController {
       if (this.shouldMoveToMechanicPosition(bot, mechanicTarget)) {
         moveToward(bot, mechanicTarget, deltaSeconds);
       }
+    }
+  }
+
+  // P3 주사위: 봇을 매 틱 주사위 정답 위치로 이동(공략 동선).
+  updateDice(deltaMs: number, config: DiceConfig) {
+    if (!this.active) {
+      return;
+    }
+    if (this.humanCount() === 0) {
+      this.stop();
+      return;
+    }
+    this.ensureBots();
+    const deltaSeconds = Math.max(0, deltaMs / 1000);
+    for (const role of PLAYER_ROLES) {
+      const bot = this.state.players.get(botId(role));
+      if (!bot) {
+        continue;
+      }
+      moveToward(bot, diceRolePosition(role, this.state.elapsed, config), deltaSeconds);
     }
   }
 

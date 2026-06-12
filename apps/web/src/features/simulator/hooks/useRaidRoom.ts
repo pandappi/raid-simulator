@@ -52,7 +52,8 @@ export function useRaidRoom() {
           lastSeq,
           marker: readMarker(player.marker),
           markerVisible: player.markerVisible === true,
-          priorityMarker: readPriorityMarker(player.priorityMarker)
+          priorityMarker: readPriorityMarker(player.priorityMarker),
+          dice: Number(player.dice) || 0
         };
         ingestSnapshot(key, player.x, player.z, player.rotation, lastSeq);
       }
@@ -226,7 +227,10 @@ function syncGimmick(state: unknown) {
       radius: Number(aoe.radius) || 0,
       dir: Number(aoe.dir) || 0,
       angle: Number(aoe.angle) || 0,
-      range: Number(aoe.range) || 0
+      range: Number(aoe.range) || 0,
+      length: Number(aoe.length) || 0,
+      width: Number(aoe.width) || 0,
+      danger: aoe.danger === true
     });
   });
 
@@ -246,6 +250,9 @@ function syncGimmick(state: unknown) {
     roomRemainingSec: Number(s.roomRemainingSec) || 0,
     bossActive: s.bossActive === true,
     bossCast: typeof s.bossCast === "string" ? s.bossCast : "",
+    bossX: Number(s.bossX) || 0,
+    bossZ: Number(s.bossZ) || 0,
+    bossRadius: Number(s.bossRadius) || 0,
     towers,
     aoes,
     logs
@@ -274,7 +281,8 @@ function toPlayerSnapshot(player: unknown): PlayerSnapshot | null {
       lastSeq: typeof player.lastSeq === "number" ? player.lastSeq : 0,
       marker: readMarker(player.marker),
       markerVisible: player.markerVisible === true,
-      priorityMarker: readPriorityMarker(player.priorityMarker)
+      priorityMarker: readPriorityMarker(player.priorityMarker),
+      dice: Number(player.dice) || 0
     };
   }
 

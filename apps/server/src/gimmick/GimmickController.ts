@@ -22,6 +22,20 @@ import {
   TOWER_RADIUS,
   TOWER_REQUIRED_OCCUPANTS,
   TOWER_ROUNDS,
+  createDiceConfig,
+  diceAttacks,
+  diceBossPosition,
+  diceHitCount,
+  diceLabel,
+  diceRolePosition,
+  diceVisibleAt,
+  DICE_BOSS_RADIUS,
+  DICE_FIRE_MS,
+  DICE_FIRE_SHOW_MS,
+  DICE_KNOCK_MS,
+  DICE_TOTAL_MS,
+  isPlayerRole,
+  type DiceConfig,
   type MarkerType
 } from "@raid-simulator/shared";
 import type { RaidRoomState } from "../schemas/RaidRoomState.js";
@@ -47,10 +61,24 @@ export class GimmickController {
   private stoppedByFailure = false;
   private baseIndex = 0;
   private rotDir = 1;
+  // P3 주사위
+  private diceMode = false;
+  private diceConfig: DiceConfig | null = null;
+  private knockApplied = false;
+  private diceJudged = false;
+  private lastDiceLabel = "";
 
   constructor(private readonly state: RaidRoomState) {}
 
+  getDiceConfig(): DiceConfig | null {
+    return this.diceMode ? this.diceConfig : null;
+  }
+
   start(gimmick: string, options: StartOptions = {}) {
+    if (gimmick === "dice") {
+      this.startDice(options);
+      return;
+    }
     if (gimmick !== "missing") {
       return;
     }
@@ -106,6 +134,10 @@ export class GimmickController {
       return;
     }
     this.state.elapsed += dtMs;
+    if (this.diceMode) {
+      this.updateDice();
+      return;
+    }
     const elapsed = this.state.elapsed;
     // 새 이벤트가 동적으로 추가될 수 있으므로 인덱스 기반으로 순회.
     for (let i = 0; i < this.schedule.length; i++) {
@@ -125,13 +157,123 @@ export class GimmickController {
     this.idCounter = 0;
     this.stopOnFailure = false;
     this.stoppedByFailure = false;
+    this.diceMode = false;
+    this.diceConfig = null;
+    this.knockApplied = false;
+    this.diceJudged = false;
+    this.lastDiceLabel = "";
     this.state.paused = false;
     this.state.controlsLocked = false;
+    this.state.bossX = 0;
+    this.state.bossZ = 0;
+    this.state.bossRadius = 0;
     this.state.towers.clear();
     this.state.aoes.splice(0, this.state.aoes.length);
     this.state.logs.splice(0, this.state.logs.length);
     this.state.lastEvenBossCast = "";
     this.clearAllMarkers();
+    this.state.players.forEach((p) => (p.dice = 0));
+  }
+
+  // --- P3 주사위 ---
+
+  private startDice(options: StartOptions) {
+    this.reset();
+    this.running = true;
+    this.diceMode = true;
+    this.stopOnFailure = options.stopOnFailure === true;
+    this.failed = false;
+    this.diceConfig = createDiceConfig();
+    this.state.gimmick = "dice";
+    this.state.gimmickPhase = "running";
+    this.state.bossActive = true;
+    this.state.bossCast = "";
+    this.state.elapsed = 0;
+    this.state.round = 0;
+    this.state.paused = false;
+    const boss = diceBossPosition(this.diceConfig);
+    this.state.bossX = boss.x;
+    this.state.bossZ = boss.z;
+    this.state.bossRadius = DICE_BOSS_RADIUS;
+    this.log("P3 주사위 시작");
+  }
+
+  private updateDice() {
+    const config = this.diceConfig;
+    if (!config) {
+      return;
+    }
+    const t = this.state.elapsed;
+
+    // 단계 라벨 로그(바뀔 때만)
+    const label = diceLabel(t);
+    if (label !== this.lastDiceLabel) {
+      this.lastDiceLabel = label;
+      this.log(label);
+    }
+
+    // 주사위 눈 표시(부여 시점 이후)
+    const visible = diceVisibleAt(t);
+    this.state.players.forEach((p) => {
+      if (isPlayerRole(p.role)) {
+        p.dice = visible ? config.diceByRole[p.role] ?? 0 : 0;
+      }
+    });
+
+    // 넉백: 보스 기준 10m 뒤로 전원 강제 이동(1회)
+    if (!this.knockApplied && t >= DICE_KNOCK_MS) {
+      this.knockApplied = true;
+      this.state.players.forEach((p) => {
+        if (!isPlayerRole(p.role)) return;
+        const knocked = diceRolePosition(p.role, DICE_KNOCK_MS + 500, config);
+        p.x = knocked.x;
+        p.z = knocked.z;
+      });
+    }
+
+    // 공격 텔레그래프 → aoes 재구성
+    this.rebuildDiceAoes(diceAttacks(t, config));
+
+    // 9~16번 직선 종료 시점 판정: 각자 정확히 1대만 = 성공
+    if (!this.diceJudged && t >= DICE_FIRE_MS + DICE_FIRE_SHOW_MS) {
+      this.diceJudged = true;
+      for (const { id, p } of this.players()) {
+        if (!isPlayerRole(p.role)) continue;
+        const hits = diceHitCount({ x: p.x, z: p.z }, config);
+        if (hits !== 1) {
+          this.failed = true;
+          this.log(`❌ 실패: ${p.role} 주사위 직선 ${hits}대 피격 (1대 필요)`);
+        }
+        void id;
+      }
+      if (!this.failed) {
+        this.log("✅ 주사위 직선 모두 1대씩 회피 성공");
+      }
+    }
+
+    if (t >= DICE_TOTAL_MS) {
+      this.running = false;
+      this.state.aoes.splice(0, this.state.aoes.length);
+      this.state.gimmickPhase = this.failed ? "failed" : "success";
+      this.log(this.failed ? "기믹 종료: 일부 실패 포함" : "✅ 기믹 성공");
+    }
+  }
+
+  private rebuildDiceAoes(attacks: ReturnType<typeof diceAttacks>) {
+    this.state.aoes.splice(0, this.state.aoes.length);
+    for (const attack of attacks) {
+      const aoe = new AoeSchema();
+      aoe.id = this.nextId("dice");
+      aoe.kind = attack.kind;
+      aoe.x = attack.x;
+      aoe.z = attack.z;
+      aoe.radius = attack.radius ?? 0;
+      aoe.dir = attack.dir ?? 0;
+      aoe.length = attack.length ?? 0;
+      aoe.width = attack.width ?? 0;
+      aoe.danger = attack.danger === true;
+      this.state.aoes.push(aoe);
+    }
   }
 
   private nextId(prefix: string): string {

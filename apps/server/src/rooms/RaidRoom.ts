@@ -135,7 +135,12 @@ export class RaidRoom extends Room<RaidRoomState> {
     // 기믹 타임라인 진행.
     this.setSimulationInterval((dt) => {
       if (!this.state.paused && this.state.gimmickPhase === "running") {
-        this.bots.update(dt);
+        const diceConfig = this.gimmick.getDiceConfig();
+        if (diceConfig) {
+          this.bots.updateDice(dt, diceConfig);
+        } else {
+          this.bots.update(dt);
+        }
       }
       this.gimmick.update(dt);
       this.updateRoomLifetime(dt);

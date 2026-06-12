@@ -15,4 +15,6 @@ export class PlayerSchema extends Schema {
   @type("string") priorityMarker = "";
   // 징 부여 횟수(최대 4회 제한 판정용).
   @type("number") markerCount = 0;
+  // P3 주사위 눈(1~8). 0이면 없음.
+  @type("number") dice = 0;
 }

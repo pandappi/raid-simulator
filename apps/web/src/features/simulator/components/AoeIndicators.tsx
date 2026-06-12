@@ -75,35 +75,19 @@ function CircleAoe({ aoe }: { aoe: AoeView }) {
   );
 }
 
-const ARENA_EDGE = 20;
-
 function RectAoe({ aoe }: { aoe: AoeView }) {
-  // (x,z)=시작점에서 dir 방향으로 맵 반대편 끝까지 뻗는 직선 범위.
-  // 시작점은 밝은 원, 끝(반대편)은 화살촉으로 방향을 표시한다. local +Z = 진행 방향.
+  // (x,z)=시작점에서 dir 방향으로 맵 반대편 끝까지 뻗는 직선 범위. local +Z = 진행 방향.
   const w = aoe.width ?? 8;
-  const color = aoeColor(aoe);
-  // 시작점(맵끝)에서 dir로 갈 때 아레나 원과의 반대편 교차까지 거리(코드 = -2·(S·u)).
   const ux = Math.sin(aoe.dir);
   const uz = Math.cos(aoe.dir);
   const chord = -2 * (aoe.x * ux + aoe.z * uz);
-  const length = chord > 1 ? chord : aoe.length ?? ARENA_EDGE;
+  const length = chord > 1 ? chord : aoe.length ?? 20;
 
   return (
     <group position={[aoe.x, 0, aoe.z]} rotation={[0, aoe.dir, 0]}>
-      {/* 직선 범위 본체 */}
       <mesh position={[0, 0.08, length / 2]}>
         <boxGeometry args={[w, 0.04, length]} />
-        <meshBasicMaterial color={color} transparent opacity={0.3} depthWrite={false} />
-      </mesh>
-      {/* 시작점: 밝은 원 */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.13, 0]}>
-        <circleGeometry args={[w * 0.42, 28]} />
-        <meshBasicMaterial color={color} transparent opacity={0.95} depthWrite={false} />
-      </mesh>
-      {/* 끝: 진행 방향 화살촉 */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.13, Math.max(2, length - w * 0.4)]}>
-        <coneGeometry args={[w * 0.5, w * 0.8, 3]} />
-        <meshBasicMaterial color={color} transparent opacity={0.85} depthWrite={false} />
+        <meshBasicMaterial color={aoeColor(aoe)} transparent opacity={0.35} depthWrite={false} />
       </mesh>
     </group>
   );

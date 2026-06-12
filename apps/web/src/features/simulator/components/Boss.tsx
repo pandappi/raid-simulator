@@ -5,7 +5,7 @@ export function Boss() {
   const gimmick = useSimulatorStore((state) => state.gimmick);
   const x = gimmick.bossX ?? 0;
   const z = gimmick.bossZ ?? 0;
-  const radius = gimmick.bossRadius ?? BOSS_RADIUS;
+  const radius = gimmick.bossRadius && gimmick.bossRadius > 0 ? gimmick.bossRadius : BOSS_RADIUS;
 
   return (
     <group position={[x, 0, z]}>

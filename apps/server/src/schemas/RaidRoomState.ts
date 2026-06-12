@@ -11,7 +11,10 @@ export class RaidRoomState extends Schema {
   @type("string") gimmick = ""; // "" | "missing"
   @type("string") gimmickPhase = "idle"; // idle | running | success | failed
   @type("number") round = 0;
-  @type("boolean") bossActive = false; // 보스(중앙) 표시 여부
+  @type("boolean") bossActive = false; // 보스 표시 여부
+  @type("number") bossX = 0; // 보스 위치(주사위 기믹: 웨이마크 위)
+  @type("number") bossZ = 0;
+  @type("number") bossRadius = 0; // 0이면 기본값 사용
   @type("string") bossCast = ""; // "" | "future" | "past"
   @type("string") lastEvenBossCast = ""; // "" | "future" | "past"
   @type("number") missingBaseIndex = 0;
