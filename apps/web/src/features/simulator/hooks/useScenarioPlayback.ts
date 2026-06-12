@@ -190,7 +190,7 @@ export function useScenarioPlayback(
 
 // P3 주사위 공략보기: 보스 공격 텔레그래프(rect/stack) + 회피 위치 + 주사위 눈 표시.
 function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
-  const { positions, attacks, diceByRole, label } = sampleDice(elapsed, config);
+  const { positions, attacks, diceByRole, diceVisible, label } = sampleDice(elapsed, config);
   const aheadPositions = sampleDice(Math.min(DICE_TOTAL_MS, elapsed + 80), config).positions;
   const players: Record<string, PlayerSnapshot> = {};
   for (const player of PLAYERS) {
@@ -207,9 +207,11 @@ function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
       lastSeq: 0,
       marker: "",
       markerVisible: false,
-      priorityMarker: "",
-      dice: diceByRole[player.role]
+      priorityMarker: ""
     };
+    if (diceVisible) {
+      snapshot.dice = diceByRole[player.role];
+    }
     players[player.id] = snapshot;
     ingestSnapshot(player.id, pos.x, pos.z, rotation, 0);
   }

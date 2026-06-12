@@ -17,6 +17,7 @@ export type DiceSample = {
   positions: Record<PlayerRole, Vec2>;
   attacks: DiceAttack[];
   diceByRole: Record<PlayerRole, number>;
+  diceVisible: boolean;
   label: string;
 };
 export type DiceConfig = {
@@ -36,12 +37,12 @@ const STACK_R = 6; // 연두 장판 반지름
 const FIRST_MS = 3000;
 const GAP_MS = 2000;
 const blastAt = (k: number) => FIRST_MS + (k - 1) * GAP_MS; // #1=3s … #8=17s
-const KNOCK_MS = blastAt(4); // 9s
-const PUDDLE_MS = KNOCK_MS + 1000; // 10s
-const DICE_ASSIGN_MS = blastAt(6); // 13s
-const DICE_FIRE_START_MS = blastAt(8) + 5000; // 22s
+const KNOCK_MS = blastAt(4); // 9s — 4번째 발사 시 넉백
+const DICE_ASSIGN_MS = blastAt(5); // 11s — 5번째 발사 시 주사위 부여
+const GREEN_MS = blastAt(6); // 13s — 6번째 발사 시 연두 장판(중앙 쉐어)
+const DICE_FIRE_START_MS = blastAt(8) + 6000; // 23s — #8 후 6초
 const DICE_FIRE_GAP_MS = 1000;
-export const DICE_TOTAL_MS = DICE_FIRE_START_MS + 8 * DICE_FIRE_GAP_MS + 2000; // ~32s
+export const DICE_TOTAL_MS = DICE_FIRE_START_MS + 8 * DICE_FIRE_GAP_MS + 2000; // ~33s
 
 function angleOf(index: number): number {
   return ((index % 8) + 8) % 8 * (Math.PI / 4);
@@ -93,7 +94,7 @@ function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: 
     { t: 0, pos: stack },
     { t: KNOCK_MS, pos: stack },
     { t: KNOCK_MS + 800, pos: knocked },
-    { t: PUDDLE_MS + 500, pos: center },
+    { t: GREEN_MS - 500, pos: center }, // #6 연두 장판 전에 중앙 집결
     { t: blastAt(8), pos: center },
     { t: DICE_FIRE_START_MS - 1000, pos: dice },
     { t: DICE_TOTAL_MS, pos: dice }
@@ -129,8 +130,8 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
     }
   }
 
-  // 연두 장판(중앙 6m 쉐어).
-  if (t >= PUDDLE_MS && t <= DICE_ASSIGN_MS + 1000) {
+  // 연두 장판(중앙 6m 쉐어) — 6번째 발사 시점.
+  if (t >= GREEN_MS && t <= GREEN_MS + 1500) {
     attacks.push({ kind: "stack", x: 0, z: 0, radius: STACK_R });
   }
 
@@ -151,10 +152,10 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
 function labelFor(t: number): string {
   if (t < blastAt(1)) return "집결 (보스 안쪽)";
   if (t < KNOCK_MS) return "알테마 블래스터 회전 (#1~#3)";
-  if (t < PUDDLE_MS) return "4번째 발사 — 넉백 5m";
-  if (t < DICE_ASSIGN_MS) return "연두 장판 — 중앙 집결 쉐어 (#5)";
-  if (t < blastAt(8)) return "주사위 1~8 부여 (#6) + 회전 블래스터 #7·#8";
-  if (t < DICE_FIRE_START_MS) return "주사위 유도 위치로 산개 (웨이마크 사이 맵끝)";
+  if (t < DICE_ASSIGN_MS) return "4번째 발사 — 넉백 5m";
+  if (t < GREEN_MS) return "5번째 발사 — 주사위 1~8 부여";
+  if (t < blastAt(8)) return "6번째 발사 — 연두 장판 중앙 쉐어 (+#7)";
+  if (t < DICE_FIRE_START_MS) return "#8 후 — 주사위 위치로 산개(웨이마크 사이 맵끝)";
   return "주사위 유도 — 1~8 순차 발사, 각자 1대만";
 }
 
@@ -164,5 +165,12 @@ export function sampleDice(elapsedMs: number, config: DiceConfig): DiceSample {
   for (const role of PLAYER_ROLES) {
     positions[role] = sampleKeyframes(roleKeyframes(role, config), t);
   }
-  return { positions, attacks: currentAttacks(t, config), diceByRole: config.diceByRole, label: labelFor(t) };
+  // 주사위 눈은 5번째 발사(부여) 이후에만 표시.
+  return {
+    positions,
+    attacks: currentAttacks(t, config),
+    diceByRole: config.diceByRole,
+    diceVisible: t >= DICE_ASSIGN_MS,
+    label: labelFor(t)
+  };
 }
