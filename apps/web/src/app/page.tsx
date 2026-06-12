@@ -121,7 +121,7 @@ export default function Home() {
     <main className="simulator-screen">
       <SimulatorCanvas />
       <ConnectionOverlay
-        name={scenarioMode ? `${scenarioFocusRole ?? ""} 공략보기` : selfName || "플레이어"}
+        name={scenarioMode ? `${scenarioFocusRole ?? ""} 동선보기` : selfName || "플레이어"}
         role={scenarioMode ? scenarioFocusRole : selfRole}
         roomId={scenarioMode ? null : roomId}
         controlsLocked={!scenarioMode && controlsLocked}
@@ -139,7 +139,7 @@ export default function Home() {
         <div className="gimmick-panel scenario-panel">
           <div className="gimmick-row">
             <span className={`gimmick-status gimmick-status--${gimmick.phase}`}>
-              공략 보기 · {PHASE_LABEL[gimmick.phase] ?? gimmick.phase}
+              동선 보기 · {PHASE_LABEL[gimmick.phase] ?? gimmick.phase}
               {gimmick.round > 0 ? ` · ${gimmick.round}번 탑` : ""}
               {scenarioPaused ? " · 일시정지" : ""}
             </span>

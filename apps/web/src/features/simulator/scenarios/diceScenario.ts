@@ -5,12 +5,14 @@ import { PLAYER_ROLES, type PlayerRole } from "@raid-simulator/shared";
 
 type Vec2 = { x: number; z: number };
 export type DiceAttack = {
-  kind: "blaster" | "stack" | "circle";
+  kind: "blaster" | "stack" | "circle" | "rect";
   x: number;
   z: number;
   radius?: number;
   dir?: number;
   width?: number;
+  length?: number;
+  danger?: boolean;
 };
 export type DiceSample = {
   positions: Record<PlayerRole, Vec2>;
@@ -44,7 +46,9 @@ const DICE_ASSIGN_MS = blastAt(5); // 11s — 5번째 발사 시 주사위 부�
 const GREEN_MS = blastAt(6); // 13s — 6번째 발사 시 연두 장판(중앙 쉐어)
 const DICE_FIRE_START_MS = blastAt(8) + 6000; // 23s — #8 후 6초
 const DICE_FIRE_GAP_MS = 1000;
-export const DICE_TOTAL_MS = DICE_FIRE_START_MS + 8 * DICE_FIRE_GAP_MS + 2000; // ~33s
+const SECOND_SET_MS = DICE_FIRE_START_MS + 8 * DICE_FIRE_GAP_MS + 500; // 31.5s — #9~16 동시 직선
+const SECOND_SET_SHOW_MS = 2000; // 빨간 직선 2초 표시
+export const DICE_TOTAL_MS = SECOND_SET_MS + SECOND_SET_SHOW_MS + 1500; // ~35s
 
 function angleOf(index: number): number {
   return ((index % 8) + 8) % 8 * (Math.PI / 4);
@@ -95,7 +99,7 @@ function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: 
   return [
     { t: 0, pos: stack },
     { t: KNOCK_MS, pos: stack },
-    { t: KNOCK_MS + 300, pos: knocked }, // 빠른 넉백(0.3초)
+    { t: KNOCK_MS + 500, pos: knocked }, // 빠른 넉백(0.5초)
     { t: GREEN_MS - 500, pos: center }, // #6 연두 장판 전에 중앙 집결
     { t: blastAt(8), pos: center },
     { t: DICE_FIRE_START_MS - 1000, pos: dice },
@@ -152,6 +156,16 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
     }
   }
 
+  // 9~16번째 알테마 블래스터: 같은 회전방향으로 45°씩 이어진 8방향이 동시에,
+  // 빨간 직선 범위(중앙 관통)로 2초간 표시. (웨이마크 사이 = 안전 → 주사위 위치가 회피지점)
+  if (t >= SECOND_SET_MS && t <= SECOND_SET_MS + SECOND_SET_SHOW_MS) {
+    for (let j = 0; j < 8; j++) {
+      const idx = config.startIndex + j * config.rotDir;
+      const o = posAngle(angleOf(idx), ARENA);
+      attacks.push({ kind: "rect", x: o.x, z: o.z, dir: angleOf(idx + 4), length: ARENA * 2, width: BLAST_W, danger: true });
+    }
+  }
+
   return attacks;
 }
 
@@ -162,7 +176,8 @@ function labelFor(t: number): string {
   if (t < GREEN_MS) return "5번째 발사 — 주사위 1~8 부여";
   if (t < blastAt(8)) return "6번째 발사 — 연두 장판 중앙 쉐어 (+#7)";
   if (t < DICE_FIRE_START_MS) return "#8 후 — 주사위 위치로 산개(웨이마크 사이 맵끝)";
-  return "주사위 유도 — 1~8 순차 발사, 각자 1대만";
+  if (t < SECOND_SET_MS) return "주사위 유도 — 1~8 순차 발사, 각자 1대만";
+  return "9~16번 알테마 블래스터 — 8방향 직선(동시)";
 }
 
 export function sampleDice(elapsedMs: number, config: DiceConfig): DiceSample {

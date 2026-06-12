@@ -31,28 +31,31 @@ export function AoeIndicators() {
 }
 
 function BlasterAoe({ aoe }: { aoe: AoeView }) {
-  // dir 방향을 향한 꺽쇠(`<`) 모양 투사체. (x,z)가 현재 위치.
-  const geometry = useMemo(() => {
-    const w = (aoe.width ?? 8) / 2;
-    const head = (aoe.width ?? 8) * 0.7;
-    const back = (aoe.width ?? 8) * 0.25;
-    const fx = Math.sin(aoe.dir);
-    const fz = Math.cos(aoe.dir);
-    const rx = fz;
-    const rz = -fx;
-    const v = (along: number, side: number) => [fx * along + rx * side, 0, fz * along + rz * side];
-    // 두께감 있는 꺽쇠: 앞 꼭짓점 + 양 날개 + 안쪽 V
-    const positions = [...v(head, 0), ...v(0, -w), ...v(-back, 0), ...v(head, 0), ...v(-back, 0), ...v(0, w)];
-    const geom = new BufferGeometry();
-    geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
-    geom.computeVertexNormals();
-    return geom;
-  }, [aoe.dir, aoe.width]);
-
+  // 높이 있는 검풍(세로 블레이드) + 양옆 검보라 반구 터짐. dir = 진행 방향(local +Z).
+  const w = aoe.width ?? 8;
+  const half = w / 2;
   return (
-    <mesh geometry={geometry} position={[aoe.x, 0.12, aoe.z]}>
-      <meshBasicMaterial color={BLASTER_COLOR} transparent opacity={0.85} depthWrite={false} side={2} />
-    </mesh>
+    <group position={[aoe.x, 0, aoe.z]} rotation={[0, aoe.dir, 0]}>
+      {/* 검풍 본체: 세로로 선 얇고 높은 블레이드 */}
+      <mesh position={[0, 1.4, 0]}>
+        <boxGeometry args={[w * 0.55, 2.8, 0.6]} />
+        <meshBasicMaterial color={BLASTER_COLOR} transparent opacity={0.7} depthWrite={false} />
+      </mesh>
+      {/* 위로 갈수록 옅어지는 윗날 */}
+      <mesh position={[0, 2.9, 0]}>
+        <boxGeometry args={[w * 0.32, 1.0, 0.4]} />
+        <meshBasicMaterial color="#d9c6ff" transparent opacity={0.45} depthWrite={false} />
+      </mesh>
+      {/* 양옆 검보라 반구(터지는 느낌) */}
+      <mesh position={[-half, 0.2, 0]}>
+        <sphereGeometry args={[w * 0.34, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshBasicMaterial color="#5b2a9e" transparent opacity={0.55} depthWrite={false} />
+      </mesh>
+      <mesh position={[half, 0.2, 0]}>
+        <sphereGeometry args={[w * 0.34, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshBasicMaterial color="#5b2a9e" transparent opacity={0.55} depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 

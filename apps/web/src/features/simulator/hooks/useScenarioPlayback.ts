@@ -124,7 +124,7 @@ export function useScenarioPlayback(
       const store = useSimulatorStore.getState();
       const focused = focusRole ? PLAYERS.find((player) => player.role === focusRole) : undefined;
       store.setSessionId(focused?.id ?? null);
-      store.setSelf(focusRole ? `${focusRole} 공략보기` : "공략보기", focusRole);
+      store.setSelf(focusRole ? `${focusRole} 동선보기` : "동선보기", focusRole);
       store.setConnectionStatus("connected");
       store.setErrorMessage(null);
       if (focused && focusRole) {
@@ -160,7 +160,7 @@ export function useScenarioPlayback(
     const store = useSimulatorStore.getState();
     const focusedPlayer = focusRole ? PLAYERS.find((player) => player.role === focusRole) : undefined;
     store.setSessionId(focusedPlayer?.id ?? null);
-    store.setSelf(focusRole ? `${focusRole} 공략보기` : "공략보기", focusRole);
+    store.setSelf(focusRole ? `${focusRole} 동선보기` : "동선보기", focusRole);
     store.setConnectionStatus("connected");
     store.setErrorMessage(null);
     if (focusedPlayer) {
@@ -230,7 +230,9 @@ function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
     dir: attack.dir ?? 0,
     angle: 0,
     range: 0,
-    width: attack.width ?? 0
+    length: attack.length ?? 0,
+    width: attack.width ?? 0,
+    danger: attack.danger === true
   }));
   useSimulatorStore.getState().setPlayers(players);
   useSimulatorStore.getState().setGimmick({

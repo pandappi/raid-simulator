@@ -96,7 +96,7 @@ export function JoinPanel({
       </div>
 
       <label className="field-label" htmlFor="scenario-gimmick">
-        공략 보기 기믹
+        동선 보기 기믹
       </label>
       <select
         id="scenario-gimmick"
@@ -121,7 +121,7 @@ export function JoinPanel({
         }}
         disabled={isConnecting}
       >
-        공략 보기
+        동선 보기
       </button>
 
       {(localError || errorMessage) && <div className="error-message">{localError ?? errorMessage}</div>}
