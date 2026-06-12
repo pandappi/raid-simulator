@@ -5,8 +5,10 @@ import { useSimulatorStore, type AoeView } from "../stores/simulatorStore";
 const AOE_COLOR = "#ff9a3c"; // 옅은 주황(피해)
 const DANGER_COLOR = "#ff5f5f"; // 보스 공격 텔레그래프(위험)
 const STACK_COLOR = "#86e36b"; // 연두(쉐어 장판)
+const BLASTER_COLOR = "#b69cff"; // 연보라(알테마 블래스터 꺽쇠 투사체)
 
 function aoeColor(aoe: AoeView): string {
+  if (aoe.kind === "blaster") return BLASTER_COLOR;
   if (aoe.kind === "stack") return STACK_COLOR;
   if (aoe.danger || aoe.kind === "kick") return DANGER_COLOR;
   if (aoe.kind === "clone") return "#9b7cff";
@@ -19,11 +21,38 @@ export function AoeIndicators() {
     <group>
       {aoes.map((aoe) => {
         if (aoe.kind === "cloneSpot") return <CloneSpot key={aoe.id} aoe={aoe} />;
+        if (aoe.kind === "blaster") return <BlasterAoe key={aoe.id} aoe={aoe} />;
         if (aoe.kind === "rect") return <RectAoe key={aoe.id} aoe={aoe} />;
         if (aoe.kind === "cone" || aoe.kind === "kick") return <ConeAoe key={aoe.id} aoe={aoe} />;
         return <CircleAoe key={aoe.id} aoe={aoe} />;
       })}
     </group>
+  );
+}
+
+function BlasterAoe({ aoe }: { aoe: AoeView }) {
+  // dir 방향을 향한 꺽쇠(`<`) 모양 투사체. (x,z)가 현재 위치.
+  const geometry = useMemo(() => {
+    const w = (aoe.width ?? 8) / 2;
+    const head = (aoe.width ?? 8) * 0.7;
+    const back = (aoe.width ?? 8) * 0.25;
+    const fx = Math.sin(aoe.dir);
+    const fz = Math.cos(aoe.dir);
+    const rx = fz;
+    const rz = -fx;
+    const v = (along: number, side: number) => [fx * along + rx * side, 0, fz * along + rz * side];
+    // 두께감 있는 꺽쇠: 앞 꼭짓점 + 양 날개 + 안쪽 V
+    const positions = [...v(head, 0), ...v(0, -w), ...v(-back, 0), ...v(head, 0), ...v(-back, 0), ...v(0, w)];
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geom.computeVertexNormals();
+    return geom;
+  }, [aoe.dir, aoe.width]);
+
+  return (
+    <mesh geometry={geometry} position={[aoe.x, 0.12, aoe.z]}>
+      <meshBasicMaterial color={BLASTER_COLOR} transparent opacity={0.85} depthWrite={false} side={2} />
+    </mesh>
   );
 }
 

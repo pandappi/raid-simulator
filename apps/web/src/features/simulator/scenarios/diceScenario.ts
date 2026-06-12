@@ -5,12 +5,11 @@ import { PLAYER_ROLES, type PlayerRole } from "@raid-simulator/shared";
 
 type Vec2 = { x: number; z: number };
 export type DiceAttack = {
-  kind: "rect" | "circle" | "stack";
+  kind: "blaster" | "stack" | "circle";
   x: number;
   z: number;
   radius?: number;
   dir?: number;
-  length?: number;
   width?: number;
 };
 export type DiceSample = {
@@ -19,6 +18,9 @@ export type DiceSample = {
   diceByRole: Record<PlayerRole, number>;
   diceVisible: boolean;
   label: string;
+  bossX: number;
+  bossZ: number;
+  bossRadius: number;
 };
 export type DiceConfig = {
   bossIndex: number; // 보스가 선 8방향(0=북, 시계 45°)
@@ -93,7 +95,7 @@ function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: 
   return [
     { t: 0, pos: stack },
     { t: KNOCK_MS, pos: stack },
-    { t: KNOCK_MS + 800, pos: knocked },
+    { t: KNOCK_MS + 300, pos: knocked }, // 빠른 넉백(0.3초)
     { t: GREEN_MS - 500, pos: center }, // #6 연두 장판 전에 중앙 집결
     { t: blastAt(8), pos: center },
     { t: DICE_FIRE_START_MS - 1000, pos: dice },
@@ -120,13 +122,16 @@ function sampleKeyframes(frames: { t: number; pos: Vec2 }[], t: number): Vec2 {
 function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
   const attacks: DiceAttack[] = [];
 
-  // 회전 알테마 블래스터(#1~#8): 폭 8m 직선이 외곽→중앙관통→반대끝.
+  // 회전 알테마 블래스터(#1~#8): 연보라 꺽쇠 투사체가 외곽→중앙관통→반대끝으로 1초간 이동.
   for (let k = 1; k <= 8; k++) {
     const fire = blastAt(k);
     if (t >= fire && t <= fire + 1000) {
       const startIdx = config.startIndex + (k - 1) * config.rotDir;
       const origin = posAngle(angleOf(startIdx), ARENA);
-      attacks.push({ kind: "rect", x: origin.x, z: origin.z, dir: angleOf(startIdx + 4), length: ARENA * 2, width: BLAST_W });
+      const target = posAngle(angleOf(startIdx + 4), ARENA); // 반대편 끝(중앙 관통)
+      const pos = lerp(origin, target, (t - fire) / 1000);
+      const dir = Math.atan2(target.x - origin.x, target.z - origin.z);
+      attacks.push({ kind: "blaster", x: pos.x, z: pos.z, dir, width: BLAST_W });
     }
   }
 
@@ -135,14 +140,15 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
     attacks.push({ kind: "stack", x: 0, z: 0, radius: STACK_R });
   }
 
-  // 주사위 유도: #1 시작점에서 대상자 방향으로 직선(맵끝까지), 1~8 순차.
+  // 주사위 유도: #1 시작점에서 대상자 방향으로 꺽쇠 투사체가 이동(맵끝까지), 1~8 순차.
   const origin = posAngle(angleOf(config.startIndex), ARENA);
   for (let d = 1; d <= 8; d++) {
     const fire = DICE_FIRE_START_MS + (d - 1) * DICE_FIRE_GAP_MS;
     if (t >= fire && t <= fire + 800) {
       const target = dicePosition(d, config);
+      const pos = lerp(origin, target, (t - fire) / 800);
       const dir = Math.atan2(target.x - origin.x, target.z - origin.z);
-      attacks.push({ kind: "rect", x: origin.x, z: origin.z, dir, length: ARENA * 2.2, width: BLAST_W });
+      attacks.push({ kind: "blaster", x: pos.x, z: pos.z, dir, width: BLAST_W });
     }
   }
 
@@ -166,11 +172,15 @@ export function sampleDice(elapsedMs: number, config: DiceConfig): DiceSample {
     positions[role] = sampleKeyframes(roleKeyframes(role, config), t);
   }
   // 주사위 눈은 5번째 발사(부여) 이후에만 표시.
+  const boss = posAngle(angleOf(config.bossIndex), WAY); // 보스는 웨이마크 위(13m)
   return {
     positions,
     attacks: currentAttacks(t, config),
     diceByRole: config.diceByRole,
     diceVisible: t >= DICE_ASSIGN_MS,
-    label: labelFor(t)
+    label: labelFor(t),
+    bossX: boss.x,
+    bossZ: boss.z,
+    bossRadius: BOSS_R
   };
 }

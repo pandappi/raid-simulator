@@ -28,6 +28,10 @@ export type GimmickView = {
   roomRemainingSec: number;
   bossActive: boolean;
   bossCast: string;
+  // 보스 위치/크기(기본 중앙·BOSS_RADIUS). 주사위 기믹은 웨이마크 위로 이동.
+  bossX?: number;
+  bossZ?: number;
+  bossRadius?: number;
   towers: TowerView[];
   aoes: AoeView[];
   logs: string[];

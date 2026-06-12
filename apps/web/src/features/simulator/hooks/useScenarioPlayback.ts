@@ -127,6 +127,12 @@ export function useScenarioPlayback(
       store.setSelf(focusRole ? `${focusRole} 공략보기` : "공략보기", focusRole);
       store.setConnectionStatus("connected");
       store.setErrorMessage(null);
+      if (focused && focusRole) {
+        // 선택 대상도 예측이 아니라 스크립트 위치를 따라가도록 self로 등록.
+        const init = sampleDice(0, config).positions[focusRole];
+        setSelfId(focused.id);
+        ingestSnapshot(focused.id, init.x, init.z, Math.PI, 0);
+      }
       let diceFrame = 0;
       let diceLast = performance.now();
       let diceElapsed = 0;
@@ -190,7 +196,7 @@ export function useScenarioPlayback(
 
 // P3 주사위 공략보기: 보스 공격 텔레그래프(rect/stack) + 회피 위치 + 주사위 눈 표시.
 function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
-  const { positions, attacks, diceByRole, diceVisible, label } = sampleDice(elapsed, config);
+  const { positions, attacks, diceByRole, diceVisible, label, bossX, bossZ, bossRadius } = sampleDice(elapsed, config);
   const aheadPositions = sampleDice(Math.min(DICE_TOTAL_MS, elapsed + 80), config).positions;
   const players: Record<string, PlayerSnapshot> = {};
   for (const player of PLAYERS) {
@@ -223,10 +229,8 @@ function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
     radius: attack.radius ?? 0,
     dir: attack.dir ?? 0,
     angle: 0,
-    range: attack.length ?? 0,
-    length: attack.length ?? 0,
-    width: attack.width ?? 0,
-    danger: attack.kind === "rect"
+    range: 0,
+    width: attack.width ?? 0
   }));
   useSimulatorStore.getState().setPlayers(players);
   useSimulatorStore.getState().setGimmick({
@@ -239,6 +243,9 @@ function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
     roomRemainingSec: 0,
     bossActive: true,
     bossCast: "",
+    bossX,
+    bossZ,
+    bossRadius,
     towers: [],
     aoes,
     logs: [label]
