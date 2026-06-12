@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PLAYER_ROLES, type PlayerRole } from "@raid-simulator/shared";
+import { GIMMICKS, PLAYER_ROLES, type GimmickId, type PlayerRole } from "@raid-simulator/shared";
 
 type JoinPanelProps = {
   connectionStatus: string;
@@ -7,7 +7,7 @@ type JoinPanelProps = {
   initialCode?: string;
   onCreate: (role: PlayerRole) => void;
   onJoinByCode: (code: string, role: PlayerRole) => void;
-  onScenarioStart: (role: PlayerRole) => void;
+  onScenarioStart: (role: PlayerRole, gimmick: GimmickId) => void;
 };
 
 export function JoinPanel({
@@ -20,6 +20,7 @@ export function JoinPanel({
 }: JoinPanelProps) {
   const [role, setRole] = useState<PlayerRole | null>(null);
   const [code, setCode] = useState(initialCode);
+  const [scenarioGimmick, setScenarioGimmick] = useState<GimmickId>("missing");
   const [localError, setLocalError] = useState<string | null>(null);
   const isConnecting = connectionStatus === "connecting";
 
@@ -94,12 +95,29 @@ export function JoinPanel({
         </button>
       </div>
 
+      <label className="field-label" htmlFor="scenario-gimmick">
+        공략 보기 기믹
+      </label>
+      <select
+        id="scenario-gimmick"
+        className="code-input"
+        value={scenarioGimmick}
+        onChange={(event) => setScenarioGimmick(event.target.value as GimmickId)}
+        disabled={isConnecting}
+      >
+        {GIMMICKS.map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.name}
+          </option>
+        ))}
+      </select>
+
       <button
         className="guide-button"
         type="button"
         onClick={() => {
           const picked = requireRole();
-          if (picked) onScenarioStart(picked);
+          if (picked) onScenarioStart(picked, scenarioGimmick);
         }}
         disabled={isConnecting}
       >

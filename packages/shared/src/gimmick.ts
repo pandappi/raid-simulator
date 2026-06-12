@@ -5,7 +5,14 @@ export type MarkerType = "share" | "spread" | "cone";
 export type PriorityMarkerType = "number1" | "number2" | "forbid1" | "forbid2";
 export type BossCast = "" | "missing" | "future" | "past";
 export type GimmickPhase = "idle" | "running" | "success" | "failed";
-export type GimmickId = "missing";
+export type GimmickId = "missing" | "dice";
+
+// 선택 가능한 기믹 목록. liveSupported=라이브 룸(판정/봇 보충) 지원 여부.
+// dice(P3 주사위)는 공략보기(재생)만 지원.
+export const GIMMICKS: { id: GimmickId; name: string; liveSupported: boolean }[] = [
+  { id: "missing", name: "행방불명", liveSupported: true },
+  { id: "dice", name: "P3 주사위", liveSupported: false }
+];
 
 // --- 보스 / 아레나 ---
 export const BOSS_RADIUS = 6.5; // 히트박스 반지름(지름 13m)

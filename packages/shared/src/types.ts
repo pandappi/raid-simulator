@@ -30,6 +30,8 @@ export type PlayerSnapshot = {
   marker: MarkerType | "";
   markerVisible: boolean;
   priorityMarker: PriorityMarkerType | "";
+  // 주사위 기믹: 1~8 주사위 눈(공략보기 표시용). 0/미설정이면 없음.
+  dice?: number;
 };
 
 export type RoomPhase = "waiting" | "playing";

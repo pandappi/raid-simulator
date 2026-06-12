@@ -13,6 +13,10 @@ export type AoeView = {
   dir: number;
   angle: number;
   range: number;
+  // 직선(rect) 길이·폭, 위험(빨강) 표시 (보스 공격 텔레그래프용, 선택).
+  length?: number;
+  width?: number;
+  danger?: boolean;
 };
 export type GimmickView = {
   gimmick: string;

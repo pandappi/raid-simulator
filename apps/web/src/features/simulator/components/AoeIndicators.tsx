@@ -2,17 +2,26 @@ import { useMemo } from "react";
 import { BufferGeometry, Float32BufferAttribute } from "three";
 import { useSimulatorStore, type AoeView } from "../stores/simulatorStore";
 
-const AOE_COLOR = "#ff9a3c"; // 투명도 있는 옅은 주황색
+const AOE_COLOR = "#ff9a3c"; // 옅은 주황(피해)
+const DANGER_COLOR = "#ff5f5f"; // 보스 공격 텔레그래프(위험)
+const STACK_COLOR = "#86e36b"; // 연두(쉐어 장판)
+
+function aoeColor(aoe: AoeView): string {
+  if (aoe.kind === "stack") return STACK_COLOR;
+  if (aoe.danger || aoe.kind === "kick") return DANGER_COLOR;
+  if (aoe.kind === "clone") return "#9b7cff";
+  return AOE_COLOR;
+}
 
 export function AoeIndicators() {
   const aoes = useSimulatorStore((state) => state.gimmick.aoes);
   return (
     <group>
       {aoes.map((aoe) => {
-        if (aoe.kind === "cloneSpot") {
-          return <CloneSpot key={aoe.id} aoe={aoe} />;
-        }
-        return aoe.kind === "cone" ? <ConeAoe key={aoe.id} aoe={aoe} /> : <CircleAoe key={aoe.id} aoe={aoe} />;
+        if (aoe.kind === "cloneSpot") return <CloneSpot key={aoe.id} aoe={aoe} />;
+        if (aoe.kind === "rect") return <RectAoe key={aoe.id} aoe={aoe} />;
+        if (aoe.kind === "cone" || aoe.kind === "kick") return <ConeAoe key={aoe.id} aoe={aoe} />;
+        return <CircleAoe key={aoe.id} aoe={aoe} />;
       })}
     </group>
   );
@@ -22,7 +31,32 @@ function CircleAoe({ aoe }: { aoe: AoeView }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[aoe.x, 0.08, aoe.z]}>
       <circleGeometry args={[aoe.radius, 48]} />
-      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} />
+      <meshBasicMaterial color={aoeColor(aoe)} transparent opacity={aoe.kind === "clone" ? 0.24 : 0.4} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function RectAoe({ aoe }: { aoe: AoeView }) {
+  // (x,z)에서 dir 방향으로 length만큼 뻗는, 폭 width의 직선 장판. atan2(x,z) 규약.
+  const geometry = useMemo(() => {
+    const length = aoe.length ?? aoe.range ?? 10;
+    const halfW = (aoe.width ?? 4) / 2;
+    const fx = Math.sin(aoe.dir);
+    const fz = Math.cos(aoe.dir);
+    const rx = fz;
+    const rz = -fx;
+    const p = (along: number, side: number) => [fx * along + rx * side, 0, fz * along + rz * side];
+    const positions = [...p(0, -halfW), ...p(0, halfW), ...p(length, halfW), ...p(length, -halfW)];
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geom.setIndex([0, 1, 2, 0, 2, 3]);
+    geom.computeVertexNormals();
+    return geom;
+  }, [aoe.dir, aoe.length, aoe.range, aoe.width]);
+
+  return (
+    <mesh geometry={geometry} position={[aoe.x, 0.08, aoe.z]}>
+      <meshBasicMaterial color={aoeColor(aoe)} transparent opacity={0.4} depthWrite={false} side={2} />
     </mesh>
   );
 }
@@ -67,7 +101,7 @@ function ConeAoe({ aoe }: { aoe: AoeView }) {
 
   return (
     <mesh geometry={geometry} position={[aoe.x, 0.08, aoe.z]}>
-      <meshBasicMaterial color={AOE_COLOR} transparent opacity={0.42} depthWrite={false} side={2} />
+      <meshBasicMaterial color={aoeColor(aoe)} transparent opacity={0.4} depthWrite={false} side={2} />
     </mesh>
   );
 }

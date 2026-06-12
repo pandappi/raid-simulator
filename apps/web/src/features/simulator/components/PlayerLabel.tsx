@@ -12,6 +12,11 @@ export function PlayerLabel({ player }: PlayerLabelProps) {
     <Html position={[0, PLAYER_HEIGHT + 0.65, 0]} center distanceFactor={18}>
       {marker && <MarkerIcon marker={marker} />}
       {player.priorityMarker && <PriorityMarkerIcon marker={player.priorityMarker} />}
+      {player.dice ? (
+        <div className={`dice-badge dice-badge--${player.dice % 2 === 0 ? "even" : "odd"}`} aria-label={`주사위 ${player.dice}`}>
+          {player.dice}
+        </div>
+      ) : null}
       <div className="player-label" title={player.name}>
         {player.role}
       </div>

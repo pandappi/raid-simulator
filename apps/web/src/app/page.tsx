@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import type { PlayerRole } from "@raid-simulator/shared";
+import type { GimmickId, PlayerRole } from "@raid-simulator/shared";
 import { JoinPanel } from "@/features/simulator/components/JoinPanel";
 import { ConnectionOverlay } from "@/features/simulator/components/ConnectionOverlay";
 import { GimmickPanel } from "@/features/simulator/components/GimmickPanel";
@@ -37,6 +37,7 @@ export default function Home() {
   const [scenarioMode, setScenarioMode] = useState(false);
   const [scenarioPaused, setScenarioPaused] = useState(false);
   const [scenarioFocusRole, setScenarioFocusRole] = useState<PlayerRole | null>(null);
+  const [scenarioGimmick, setScenarioGimmick] = useState<GimmickId>("missing");
   const [initialCode, setInitialCode] = useState("");
 
   const isConnected = connectionStatus === "connected";
@@ -50,7 +51,7 @@ export default function Home() {
     [players, sessionId]
   );
 
-  useScenarioPlayback(scenarioMode, scenarioPaused, scenarioFocusRole);
+  useScenarioPlayback(scenarioMode, scenarioPaused, scenarioFocusRole, scenarioGimmick);
   useKeyboardInput({ enabled: isConnected && !scenarioMode && !controlsLocked });
   usePrediction({ enabled: isConnected && !scenarioMode && !controlsLocked, sendInput });
 
@@ -104,10 +105,11 @@ export default function Home() {
           initialCode={initialCode}
           onCreate={handleCreate}
           onJoinByCode={handleJoinByCode}
-          onScenarioStart={(role) => {
+          onScenarioStart={(role, gimmickId) => {
             setJoinError(null);
             setScenarioPaused(false);
             setScenarioFocusRole(role);
+            setScenarioGimmick(gimmickId);
             setScenarioMode(true);
           }}
         />

@@ -31,8 +31,9 @@ import {
   type PlayerSnapshot,
   sortMissingTowersByBossFacingLeftRight
 } from "@raid-simulator/shared";
-import type { PriorityMarkerType } from "@raid-simulator/shared";
+import type { GimmickId, PriorityMarkerType } from "@raid-simulator/shared";
 import { ingestSnapshot, resetNetcode, setSelfId } from "../netcode";
+import { createDiceConfig, DICE_TOTAL_MS, sampleDice, type DiceConfig } from "../scenarios/diceScenario";
 import { useSimulatorStore, type AoeView, type TowerView } from "../stores/simulatorStore";
 
 type Vec2 = { x: number; z: number };
@@ -99,7 +100,12 @@ const MARKER_DEFAULT_SIDE: Record<MarkerType, "left" | "right"> = {
   spread: "right"
 };
 
-export function useScenarioPlayback(enabled: boolean, paused: boolean, focusRole: PlayerRole | null = null) {
+export function useScenarioPlayback(
+  enabled: boolean,
+  paused: boolean,
+  focusRole: PlayerRole | null = null,
+  gimmickId: GimmickId = "missing"
+) {
   const pausedRef = useRef(paused);
 
   useEffect(() => {
@@ -109,6 +115,38 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, focusRole
   useEffect(() => {
     if (!enabled) {
       return;
+    }
+
+    // P3 주사위: 별도 키프레임 공략보기(보스 공격 텔레그래프 + 회피 위치).
+    if (gimmickId === "dice") {
+      const config = createDiceConfig();
+      resetNetcode();
+      const store = useSimulatorStore.getState();
+      const focused = focusRole ? PLAYERS.find((player) => player.role === focusRole) : undefined;
+      store.setSessionId(focused?.id ?? null);
+      store.setSelf(focusRole ? `${focusRole} 공략보기` : "공략보기", focusRole);
+      store.setConnectionStatus("connected");
+      store.setErrorMessage(null);
+      let diceFrame = 0;
+      let diceLast = performance.now();
+      let diceElapsed = 0;
+      const diceTick = (time: number) => {
+        if (!pausedRef.current) {
+          diceElapsed = Math.min(DICE_TOTAL_MS, diceElapsed + Math.max(0, time - diceLast));
+        }
+        diceLast = time;
+        updateDice(diceElapsed, pausedRef.current, config);
+        if (pausedRef.current || diceElapsed < DICE_TOTAL_MS) {
+          diceFrame = window.requestAnimationFrame(diceTick);
+        }
+      };
+      updateDice(0, pausedRef.current, config);
+      diceFrame = window.requestAnimationFrame(diceTick);
+      return () => {
+        window.cancelAnimationFrame(diceFrame);
+        resetNetcode();
+        useSimulatorStore.getState().reset();
+      };
     }
 
     const scenario = createScenarioConfig();
@@ -147,7 +185,62 @@ export function useScenarioPlayback(enabled: boolean, paused: boolean, focusRole
       resetNetcode();
       useSimulatorStore.getState().reset();
     };
-  }, [enabled, focusRole]);
+  }, [enabled, focusRole, gimmickId]);
+}
+
+// P3 주사위 공략보기: 보스 공격 텔레그래프(rect/stack) + 회피 위치 + 주사위 눈 표시.
+function updateDice(elapsed: number, paused: boolean, config: DiceConfig) {
+  const { positions, attacks, diceByRole, label } = sampleDice(elapsed, config);
+  const aheadPositions = sampleDice(Math.min(DICE_TOTAL_MS, elapsed + 80), config).positions;
+  const players: Record<string, PlayerSnapshot> = {};
+  for (const player of PLAYERS) {
+    const pos = positions[player.role];
+    const nextPos = aheadPositions[player.role];
+    const rotation = Math.atan2(nextPos.x - pos.x, nextPos.z - pos.z);
+    const snapshot: PlayerSnapshot = {
+      id: player.id,
+      name: player.name,
+      role: player.role,
+      x: pos.x,
+      z: pos.z,
+      rotation,
+      lastSeq: 0,
+      marker: "",
+      markerVisible: false,
+      priorityMarker: "",
+      dice: diceByRole[player.role]
+    };
+    players[player.id] = snapshot;
+    ingestSnapshot(player.id, pos.x, pos.z, rotation, 0);
+  }
+  const aoes: AoeView[] = attacks.map((attack, index) => ({
+    id: `dice_a_${index}`,
+    kind: attack.kind,
+    x: attack.x,
+    z: attack.z,
+    radius: attack.radius ?? 0,
+    dir: attack.dir ?? 0,
+    angle: 0,
+    range: attack.length ?? 0,
+    length: attack.length ?? 0,
+    width: attack.width ?? 0,
+    danger: attack.kind === "rect"
+  }));
+  useSimulatorStore.getState().setPlayers(players);
+  useSimulatorStore.getState().setGimmick({
+    gimmick: "dice",
+    phase: elapsed >= DICE_TOTAL_MS - 2000 ? "success" : "running",
+    round: 0,
+    elapsed,
+    paused,
+    controlsLocked: false,
+    roomRemainingSec: 0,
+    bossActive: true,
+    bossCast: "",
+    towers: [],
+    aoes,
+    logs: [label]
+  });
 }
 
 function createScenarioConfig(): ScenarioConfig {

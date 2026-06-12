@@ -481,6 +481,29 @@ input {
   z-index: 1;
 }
 
+.dice-badge {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 4px;
+  place-items: center;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  filter: drop-shadow(0 4px 9px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+  user-select: none;
+}
+.dice-badge--odd {
+  background: #2f6bff;
+}
+.dice-badge--even {
+  background: #e23b3b;
+}
+
 .tower-label {
   display: grid;
   width: 26px;

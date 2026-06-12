@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### 2026-06-12
+
+#### P3 주사위 기믹 (공략보기) + 멀티 기믹 선택
+- **P3 주사위(`dice`) 공략보기 추가** — 보스 공격(알테마 블래스터 회전 직선 / 중앙 연두 장판 / 주사위 유도 직선)을 텔레그래프로 표시하고, 그 안전지대로 서는 위치를 매 판 랜덤 구성에서 계산으로 생성(`scenarios/diceScenario.ts`, `useScenarioPlayback(gimmickId="dice")`).
+  - 타임라인: 3s #1 → 2s 간격 8발(#8=17s), 9s 넉백, 10s 연두장판 쉐어, 13s 주사위 1~8 부여, 22s(#8+5s) 주사위 1초 간격 유도.
+  - 위치 공식: #1 도착점=12시, 회전 반대방향 22.5°+45°×N → 웨이마크 사이 맵끝. 보스 13m·지름10m.
+  - 판정(1대/2대) 미구현(공략보기 전용).
+- **멀티 기믹 선택 재도입**: `GIMMICKS` 레지스트리, 로비 "공략 보기 기믹" 선택(`JoinPanel`), `useScenarioPlayback` gimmickId 분기.
+- **도형/표시 추가**: `AoeView` 직선(`rect`)·연두 장판(`stack`)·위험(빨강) + `AoeIndicators` 렌더, 주사위 배지(`PlayerSnapshot.dice`, 홀=파랑/짝=빨강).
+- **문서 정합성 수정**: `MECHANIC_PATTERN_TEMPLATE.md` 웨이마크 좌표 예시를 실제 구현(8방향 13m 동일)에 맞게 갱신.
+- 명세/현황: [`docs/mechanics/dice-draft.md`](docs/mechanics/dice-draft.md).
+
 ### 2026-06-10
 
 #### 서버 운영 로그 (Render Logs 조회용)
