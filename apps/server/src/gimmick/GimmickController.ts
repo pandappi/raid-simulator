@@ -195,6 +195,14 @@ export class GimmickController {
     this.state.bossX = boss.x;
     this.state.bossZ = boss.z;
     this.state.bossRadius = DICE_BOSS_RADIUS;
+    // 시작 위치를 보스 밑 집결 자리로 스냅(걸어 들어오지 않게).
+    this.state.players.forEach((p) => {
+      if (!isPlayerRole(p.role)) return;
+      const start = diceRolePosition(p.role, 0, this.diceConfig!);
+      p.x = start.x;
+      p.z = start.z;
+      p.lastSeq = 0;
+    });
     this.log("P3 주사위 시작");
   }
 

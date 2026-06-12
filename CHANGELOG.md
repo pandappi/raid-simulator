@@ -20,6 +20,7 @@
 - 추가 보정: "공략 보기" → **"동선 보기"** 로 명칭 변경.
 - 재보정: 블래스터 투사체를 **막대 없는, 높이 있는 화살촉**(반구 제거)으로; **넉백을 보스 기준 10m 강제 이동**으로; **#9~16을 투사체가 아니라 빨간 직선 범위**로 통합 — 시작점을 45°씩(같은 회전방향) 회전시키며 각 주사위 번호 대상 방향으로 동시에 2초 표시(이전의 투사체 발사/8방향-동시 중복 제거).
 - **P3 주사위 라이브 시뮬**: 핵심 로직을 `packages/shared/diceGimmick.ts`로 이전(config·타임라인·위치·공격·판정 공유). 서버 `GimmickController` 주사위 모드가 보스(웨이마크)·공격(AoE)·주사위·넉백을 상태로 기록, 봇은 `BotController.updateDice`로 정답 동선 추종. **#9~16 직선 판정: 각자 정확히 1대=성공, 아니면 실패**. `dice` 기믹 `liveSupported:true`, 시뮬 패널/로비에서 선택. 스키마 확장(`AoeSchema.length/width/danger`, `RaidRoomState.bossX/Z/Radius`, `PlayerSchema.dice`). AoE 시작/끝 마커 제거.
+- **시작 연출/카메라/봇 우왕좌왕 보정**: ① 시작 시 이동하지 않고 보스 아래 집결 지점에서 시작(`GimmickController.startDice`가 전원 `diceRolePosition(role,0)`으로 배치). ② 카메라를 기믹 시작 시 1회 **플레이어 뒤→보스를 바라보는 시점**으로 정렬(`CameraControls`, `gimmick.bossX/Z` 기준). ③ 연두 장판 직후 봇이 **랜덤 우왕좌왕**(`wanderPoint`)하다가 판정 전에 주사위 자리로 직행해 도착(`updateDice`). ④ **#9~16 직선 등장 시점 +2초 여유**(`DICE_FIRE_MS = #8+8s = 25s`).
 
 ### 2026-06-10
 

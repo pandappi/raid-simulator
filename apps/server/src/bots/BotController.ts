@@ -1,6 +1,9 @@
 import {
+  diceBlastAt,
   directionToPosition,
   diceRolePosition,
+  DICE_FIRE_MS,
+  DICE_TOTAL_MS,
   getMissingGroupOneRoles,
   getMissingStrategyPositions,
   isPlayerRole,
@@ -136,7 +139,7 @@ export class BotController {
     }
   }
 
-  // P3 주사위: 봇을 매 틱 주사위 정답 위치로 이동(공략 동선).
+  // P3 주사위: 연두 장판까지는 정답 동선, 이후엔 우왕좌왕, #9~16 시점에 주사위 자리 도착.
   updateDice(deltaMs: number, config: DiceConfig) {
     if (!this.active) {
       return;
@@ -147,12 +150,23 @@ export class BotController {
     }
     this.ensureBots();
     const deltaSeconds = Math.max(0, deltaMs / 1000);
+    const t = this.state.elapsed;
+    const wanderUntil = diceBlastAt(6) + 1000; // 연두 장판 직후까지는 정답 동선
+    const arriveAt = DICE_FIRE_MS - 3500; // 직행 시작(판정 전 안전하게 도착하도록)
     for (const role of PLAYER_ROLES) {
       const bot = this.state.players.get(botId(role));
       if (!bot) {
         continue;
       }
-      moveToward(bot, diceRolePosition(role, this.state.elapsed, config), deltaSeconds);
+      let target: Vec2;
+      if (t < wanderUntil) {
+        target = diceRolePosition(role, t, config); // 집결→넉백→중앙 쉐어
+      } else if (t < arriveAt) {
+        target = wanderPoint(role, t); // 우왕좌왕
+      } else {
+        target = diceRolePosition(role, DICE_TOTAL_MS, config); // 최종 주사위 자리로 직행
+      }
+      moveToward(bot, target, deltaSeconds);
     }
   }
 
@@ -277,6 +291,16 @@ export function isBotId(id: string): boolean {
 
 export function botId(role: PlayerRole): string {
   return `${BOT_PREFIX}${role}`;
+}
+
+// 주사위 기믹: 연두 장판 이후 중앙 부근에서 사인파로 우왕좌왕.
+function wanderPoint(role: PlayerRole, t: number): Vec2 {
+  const idx = PLAYER_ROLES.indexOf(role);
+  const phase = idx * 0.9;
+  return {
+    x: Math.sin(t / 600 + phase) * 6 + Math.cos(t / 360 + phase) * 2.5,
+    z: Math.cos(t / 520 + phase) * 6 + Math.sin(t / 410 + phase) * 2.5
+  };
 }
 
 function moveToward(player: PlayerSchema, target: Vector2Like, deltaSeconds: number) {

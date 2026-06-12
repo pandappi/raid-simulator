@@ -35,7 +35,7 @@ export const diceBlastAt = (k: number) => FIRST_MS + (k - 1) * GAP_MS; // #1=3s 
 export const DICE_KNOCK_MS = diceBlastAt(4); // 9s
 export const DICE_ASSIGN_MS = diceBlastAt(5); // 11s
 const GREEN_MS = diceBlastAt(6); // 13s
-export const DICE_FIRE_MS = diceBlastAt(8) + 6000; // 23s — #9~16 동시 직선
+export const DICE_FIRE_MS = diceBlastAt(8) + 8000; // 25s — #9~16 동시 직선(+2s 여유)
 export const DICE_FIRE_SHOW_MS = 2000;
 export const DICE_BOSS_RADIUS = BOSS_R;
 export const DICE_TOTAL_MS = DICE_FIRE_MS + DICE_FIRE_SHOW_MS + 1500; // ~26.5s
