@@ -31,31 +31,38 @@ export function AoeIndicators() {
 }
 
 function BlasterAoe({ aoe }: { aoe: AoeView }) {
-  // 높이 있는 검풍(세로 블레이드) + 양옆 검보라 반구 터짐. dir = 진행 방향(local +Z).
-  const w = aoe.width ?? 8;
-  const half = w / 2;
+  // 막대 없는, 높이 있는 화살촉(삼각 프리즘). dir = 진행 방향(local +Z), 위로 H만큼 솟음.
+  const geometry = useMemo(() => {
+    const w = aoe.width ?? 8;
+    const halfW = w * 0.5;
+    const head = w * 0.7; // 앞 꼭짓점 거리
+    const back = w * 0.3; // 뒤 날개 거리
+    const H = 2.6; // 높이
+    // 바닥/윗면 삼각형 꼭짓점 (local: +Z 전방)
+    const T = [0, 0, head];
+    const L = [-halfW, 0, -back];
+    const R = [halfW, 0, -back];
+    const T2 = [0, H, head];
+    const L2 = [-halfW, H, -back];
+    const R2 = [halfW, H, -back];
+    const tri = (...pts: number[][]) => pts.flat();
+    const positions = [
+      ...tri(T, R, L), // 바닥
+      ...tri(T2, L2, R2), // 윗면
+      ...tri(T, L, L2), ...tri(T, L2, T2), // 좌측면
+      ...tri(R, T, T2), ...tri(R, T2, R2), // 우측면
+      ...tri(L, R, R2), ...tri(L, R2, L2) // 뒷면
+    ];
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geom.computeVertexNormals();
+    return geom;
+  }, [aoe.width]);
+
   return (
-    <group position={[aoe.x, 0, aoe.z]} rotation={[0, aoe.dir, 0]}>
-      {/* 검풍 본체: 세로로 선 얇고 높은 블레이드 */}
-      <mesh position={[0, 1.4, 0]}>
-        <boxGeometry args={[w * 0.55, 2.8, 0.6]} />
-        <meshBasicMaterial color={BLASTER_COLOR} transparent opacity={0.7} depthWrite={false} />
-      </mesh>
-      {/* 위로 갈수록 옅어지는 윗날 */}
-      <mesh position={[0, 2.9, 0]}>
-        <boxGeometry args={[w * 0.32, 1.0, 0.4]} />
-        <meshBasicMaterial color="#d9c6ff" transparent opacity={0.45} depthWrite={false} />
-      </mesh>
-      {/* 양옆 검보라 반구(터지는 느낌) */}
-      <mesh position={[-half, 0.2, 0]}>
-        <sphereGeometry args={[w * 0.34, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#5b2a9e" transparent opacity={0.55} depthWrite={false} />
-      </mesh>
-      <mesh position={[half, 0.2, 0]}>
-        <sphereGeometry args={[w * 0.34, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#5b2a9e" transparent opacity={0.55} depthWrite={false} />
-      </mesh>
-    </group>
+    <mesh geometry={geometry} position={[aoe.x, 0, aoe.z]} rotation={[0, aoe.dir, 0]}>
+      <meshBasicMaterial color={BLASTER_COLOR} transparent opacity={0.8} depthWrite={false} side={2} />
+    </mesh>
   );
 }
 

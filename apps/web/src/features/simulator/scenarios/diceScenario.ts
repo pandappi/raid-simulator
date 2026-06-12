@@ -44,11 +44,9 @@ const blastAt = (k: number) => FIRST_MS + (k - 1) * GAP_MS; // #1=3s … #8=17s
 const KNOCK_MS = blastAt(4); // 9s — 4번째 발사 시 넉백
 const DICE_ASSIGN_MS = blastAt(5); // 11s — 5번째 발사 시 주사위 부여
 const GREEN_MS = blastAt(6); // 13s — 6번째 발사 시 연두 장판(중앙 쉐어)
-const DICE_FIRE_START_MS = blastAt(8) + 6000; // 23s — #8 후 6초
-const DICE_FIRE_GAP_MS = 1000;
-const SECOND_SET_MS = DICE_FIRE_START_MS + 8 * DICE_FIRE_GAP_MS + 500; // 31.5s — #9~16 동시 직선
-const SECOND_SET_SHOW_MS = 2000; // 빨간 직선 2초 표시
-export const DICE_TOTAL_MS = SECOND_SET_MS + SECOND_SET_SHOW_MS + 1500; // ~35s
+const DICE_FIRE_START_MS = blastAt(8) + 6000; // 23s — #8 후 6초, #9~16 동시 직선
+const DICE_FIRE_SHOW_MS = 2000; // #9~16 빨간 직선 2초 표시
+export const DICE_TOTAL_MS = DICE_FIRE_START_MS + DICE_FIRE_SHOW_MS + 1500; // ~26.5s
 
 function angleOf(index: number): number {
   return ((index % 8) + 8) % 8 * (Math.PI / 4);
@@ -93,7 +91,7 @@ function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: 
   const off = posAngle((idx / 8) * Math.PI * 2, 1.6); // 겹침 방지용 소폭 오프셋
   const bossAngle = angleOf(config.bossIndex);
   const stack = add(posAngle(bossAngle, WAY - BOSS_R), off); // 보스 안쪽 가장자리(중심거리 8m)
-  const knocked = add(posAngle(bossAngle, Math.max(0, WAY - BOSS_R - 5)), off); // 5m 넉백 → 3m
+  const knocked = add(posAngle(bossAngle, WAY - BOSS_R - 10), off); // 보스 기준 10m 뒤(중앙 너머)로 강제 넉백
   const center = add({ x: 0, z: 0 }, off);
   const dice = dicePosition(config.diceByRole[role], config);
   return [
@@ -144,25 +142,14 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
     attacks.push({ kind: "stack", x: 0, z: 0, radius: STACK_R });
   }
 
-  // 주사위 유도: #1 시작점에서 대상자 방향으로 꺽쇠 투사체가 이동(맵끝까지), 1~8 순차.
-  const origin = posAngle(angleOf(config.startIndex), ARENA);
-  for (let d = 1; d <= 8; d++) {
-    const fire = DICE_FIRE_START_MS + (d - 1) * DICE_FIRE_GAP_MS;
-    if (t >= fire && t <= fire + 800) {
+  // 9~16번째 알테마 블래스터: 시작점을 45°씩(같은 회전방향) 회전시키며, 각 주사위 번호 대상 방향으로
+  // 빨간 직선 범위를 동시에 2초간 표시(투사체 아님). 웨이마크 사이(주사위 위치)가 회피 지점.
+  if (t >= DICE_FIRE_START_MS && t <= DICE_FIRE_START_MS + DICE_FIRE_SHOW_MS) {
+    for (let d = 1; d <= 8; d++) {
+      const start = posAngle(angleOf(config.startIndex + (d - 1) * config.rotDir), ARENA);
       const target = dicePosition(d, config);
-      const pos = lerp(origin, target, (t - fire) / 800);
-      const dir = Math.atan2(target.x - origin.x, target.z - origin.z);
-      attacks.push({ kind: "blaster", x: pos.x, z: pos.z, dir, width: BLAST_W });
-    }
-  }
-
-  // 9~16번째 알테마 블래스터: 같은 회전방향으로 45°씩 이어진 8방향이 동시에,
-  // 빨간 직선 범위(중앙 관통)로 2초간 표시. (웨이마크 사이 = 안전 → 주사위 위치가 회피지점)
-  if (t >= SECOND_SET_MS && t <= SECOND_SET_MS + SECOND_SET_SHOW_MS) {
-    for (let j = 0; j < 8; j++) {
-      const idx = config.startIndex + j * config.rotDir;
-      const o = posAngle(angleOf(idx), ARENA);
-      attacks.push({ kind: "rect", x: o.x, z: o.z, dir: angleOf(idx + 4), length: ARENA * 2, width: BLAST_W, danger: true });
+      const dir = Math.atan2(target.x - start.x, target.z - start.z);
+      attacks.push({ kind: "rect", x: start.x, z: start.z, dir, length: ARENA * 2.2, width: BLAST_W, danger: true });
     }
   }
 
@@ -172,12 +159,11 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
 function labelFor(t: number): string {
   if (t < blastAt(1)) return "집결 (보스 안쪽)";
   if (t < KNOCK_MS) return "알테마 블래스터 회전 (#1~#3)";
-  if (t < DICE_ASSIGN_MS) return "4번째 발사 — 넉백 5m";
+  if (t < DICE_ASSIGN_MS) return "4번째 발사 — 보스 기준 10m 넉백";
   if (t < GREEN_MS) return "5번째 발사 — 주사위 1~8 부여";
   if (t < blastAt(8)) return "6번째 발사 — 연두 장판 중앙 쉐어 (+#7)";
   if (t < DICE_FIRE_START_MS) return "#8 후 — 주사위 위치로 산개(웨이마크 사이 맵끝)";
-  if (t < SECOND_SET_MS) return "주사위 유도 — 1~8 순차 발사, 각자 1대만";
-  return "9~16번 알테마 블래스터 — 8방향 직선(동시)";
+  return "9~16번 알테마 블래스터 — 주사위 방향 빨간 직선(동시)";
 }
 
 export function sampleDice(elapsedMs: number, config: DiceConfig): DiceSample {
