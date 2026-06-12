@@ -122,6 +122,7 @@ export function useScenarioPlayback(
       const config = createDiceConfig();
       resetNetcode();
       const store = useSimulatorStore.getState();
+      store.setPlayers({}); // 이전 판의 주사위 눈/위치 잔상 초기화
       const focused = focusRole ? PLAYERS.find((player) => player.role === focusRole) : undefined;
       store.setSessionId(focused?.id ?? null);
       store.setSelf(focusRole ? `${focusRole} 동선보기` : "동선보기", focusRole);

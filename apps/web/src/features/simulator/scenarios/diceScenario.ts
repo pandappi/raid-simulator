@@ -146,7 +146,8 @@ function currentAttacks(t: number, config: DiceConfig): DiceAttack[] {
   // 빨간 직선 범위를 동시에 2초간 표시(투사체 아님). 웨이마크 사이(주사위 위치)가 회피 지점.
   if (t >= DICE_FIRE_START_MS && t <= DICE_FIRE_START_MS + DICE_FIRE_SHOW_MS) {
     for (let d = 1; d <= 8; d++) {
-      const start = posAngle(angleOf(config.startIndex + (d - 1) * config.rotDir), ARENA);
+      // 시작점은 블래스터 시작순서의 8→1 순서(= startIndex + (8-d)*rotDir).
+      const start = posAngle(angleOf(config.startIndex + (8 - d) * config.rotDir), ARENA);
       const target = dicePosition(d, config);
       const dir = Math.atan2(target.x - start.x, target.z - start.z);
       attacks.push({ kind: "rect", x: start.x, z: start.z, dir, length: ARENA * 2.2, width: BLAST_W, danger: true });
