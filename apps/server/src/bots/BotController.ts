@@ -1,9 +1,9 @@
 import {
   diceBlastAt,
   directionToPosition,
+  diceFinalPosition,
   diceRolePosition,
   DICE_FIRE_MS,
-  DICE_TOTAL_MS,
   getMissingGroupOneRoles,
   getMissingStrategyPositions,
   isPlayerRole,
@@ -149,6 +149,10 @@ export class BotController {
       return;
     }
     this.ensureBots();
+    // 판정 이후(성공=가운데 집결 / 실패=정지)는 GimmickController가 위치를 처리한다.
+    if (this.state.gimmickPhase !== "running") {
+      return;
+    }
     const deltaSeconds = Math.max(0, deltaMs / 1000);
     const t = this.state.elapsed;
     const wanderUntil = diceBlastAt(6) + 1000; // 연두 장판 직후까지는 정답 동선
@@ -164,7 +168,7 @@ export class BotController {
       } else if (t < arriveAt) {
         target = wanderPoint(role, t); // 우왕좌왕
       } else {
-        target = diceRolePosition(role, DICE_TOTAL_MS, config); // 최종 주사위 자리로 직행
+        target = diceFinalPosition(role, config); // 최종 주사위 자리로 직행
       }
       moveToward(bot, target, deltaSeconds);
     }

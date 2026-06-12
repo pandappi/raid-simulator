@@ -26,7 +26,7 @@ const ARENA = ARENA_RADIUS; // 20
 const EDGE = ARENA_RADIUS - 1; // 19
 const WAY = 13;
 const BOSS_R = 5;
-const BLAST_W = 8;
+const BLAST_W = 10; // 알테마 블래스터 폭(#1~16 공통). 기존 8m + 2m
 const STACK_R = 6;
 
 const FIRST_MS = 3000;
@@ -38,7 +38,9 @@ const GREEN_MS = diceBlastAt(6); // 13s
 export const DICE_FIRE_MS = diceBlastAt(8) + 8000; // 25s — #9~16 동시 직선(+2s 여유)
 export const DICE_FIRE_SHOW_MS = 2000;
 export const DICE_BOSS_RADIUS = BOSS_R;
-export const DICE_TOTAL_MS = DICE_FIRE_MS + DICE_FIRE_SHOW_MS + 1500; // ~26.5s
+export const DICE_GATHER_MS = 4000; // 성공 후 가운데 집결 시간
+export const DICE_JUDGE_MS = DICE_FIRE_MS + DICE_FIRE_SHOW_MS; // 27s 판정 시점
+export const DICE_TOTAL_MS = DICE_JUDGE_MS + DICE_GATHER_MS; // ~31s
 
 function angleOf(index: number): number {
   return ((((index % 8) + 8) % 8) * Math.PI) / 4;
@@ -82,6 +84,20 @@ function dicePosition(d: number, config: DiceConfig): Vector2Like {
   return posAngle(angle, EDGE);
 }
 
+function roleOffset(role: PlayerRole): Vector2Like {
+  return posAngle((PLAYER_ROLES.indexOf(role) / 8) * Math.PI * 2, 1.6);
+}
+
+// 역할의 최종 주사위 자리(판정 위치). 봇 직행 목표.
+export function diceFinalPosition(role: PlayerRole, config: DiceConfig): Vector2Like {
+  return dicePosition(config.diceByRole[role], config);
+}
+
+// 성공 후 가운데 집결 위치(역할별 소폭 오프셋).
+export function diceGatherPosition(role: PlayerRole): Vector2Like {
+  return roleOffset(role);
+}
+
 // #9~16 직선(주사위 d번): 시작점(8→1 순서) → 대상 방향, 반대편 맵끝까지.
 export function diceLine(d: number, config: DiceConfig): { start: Vector2Like; dir: number; length: number } {
   const start = posAngle(angleOf(config.startIndex + (8 - d) * config.rotDir), ARENA);
@@ -94,12 +110,11 @@ export function diceLine(d: number, config: DiceConfig): { start: Vector2Like; d
 }
 
 function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: Vector2Like }[] {
-  const idx = PLAYER_ROLES.indexOf(role);
-  const off = posAngle((idx / 8) * Math.PI * 2, 1.6);
+  const off = roleOffset(role);
   const bossAngle = angleOf(config.bossIndex);
   const stack = add(posAngle(bossAngle, WAY - BOSS_R), off);
   const knocked = add(posAngle(bossAngle, WAY - BOSS_R - 10), off);
-  const center = add({ x: 0, z: 0 }, off);
+  const center = off;
   const dice = dicePosition(config.diceByRole[role], config);
   return [
     { t: 0, pos: stack },
@@ -108,7 +123,8 @@ function roleKeyframes(role: PlayerRole, config: DiceConfig): { t: number; pos: 
     { t: GREEN_MS - 500, pos: center },
     { t: diceBlastAt(8), pos: center },
     { t: DICE_FIRE_MS - 1000, pos: dice },
-    { t: DICE_TOTAL_MS, pos: dice }
+    { t: DICE_JUDGE_MS, pos: dice }, // 직선 표시·판정 동안 자리 유지
+    { t: DICE_TOTAL_MS, pos: center } // 성공 후 가운데 집결
   ];
 }
 

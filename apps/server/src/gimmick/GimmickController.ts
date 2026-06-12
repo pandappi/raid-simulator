@@ -25,16 +25,18 @@ import {
   createDiceConfig,
   diceAttacks,
   diceBossPosition,
+  diceGatherPosition,
   diceHitCount,
   diceLabel,
   diceRolePosition,
   diceVisibleAt,
   DICE_BOSS_RADIUS,
   DICE_FIRE_MS,
-  DICE_FIRE_SHOW_MS,
+  DICE_JUDGE_MS,
   DICE_KNOCK_MS,
   DICE_TOTAL_MS,
   isPlayerRole,
+  PLAYER_MOVE_SPEED,
   type DiceConfig,
   type MarkerType
 } from "@raid-simulator/shared";
@@ -135,7 +137,7 @@ export class GimmickController {
     }
     this.state.elapsed += dtMs;
     if (this.diceMode) {
-      this.updateDice();
+      this.updateDice(dtMs);
       return;
     }
     const elapsed = this.state.elapsed;
@@ -206,12 +208,25 @@ export class GimmickController {
     this.log("P3 주사위 시작");
   }
 
-  private updateDice() {
+  private updateDice(dtMs: number) {
     const config = this.diceConfig;
     if (!config) {
       return;
     }
     const t = this.state.elapsed;
+
+    // 판정 완료 후: 성공이면 전원 가운데로 집결, 실패면 빨간 직선 유지(정지).
+    if (this.diceJudged) {
+      if (this.failed) {
+        return; // 실패: AoE/위치 그대로(직선 사라지지 않음)
+      }
+      this.gatherToCenter(dtMs);
+      if (t >= DICE_TOTAL_MS) {
+        this.running = false;
+        this.log("✅ 기믹 성공: 가운데 집결");
+      }
+      return;
+    }
 
     // 단계 라벨 로그(바뀔 때만)
     const label = diceLabel(t);
@@ -243,28 +258,49 @@ export class GimmickController {
     this.rebuildDiceAoes(diceAttacks(t, config));
 
     // 9~16번 직선 종료 시점 판정: 각자 정확히 1대만 = 성공
-    if (!this.diceJudged && t >= DICE_FIRE_MS + DICE_FIRE_SHOW_MS) {
+    if (t >= DICE_JUDGE_MS) {
       this.diceJudged = true;
-      for (const { id, p } of this.players()) {
+      for (const { p } of this.players()) {
         if (!isPlayerRole(p.role)) continue;
         const hits = diceHitCount({ x: p.x, z: p.z }, config);
         if (hits !== 1) {
           this.failed = true;
           this.log(`❌ 실패: ${p.role} 주사위 직선 ${hits}대 피격 (1대 필요)`);
         }
-        void id;
       }
-      if (!this.failed) {
-        this.log("✅ 주사위 직선 모두 1대씩 회피 성공");
+      if (this.failed) {
+        // 실패: #9~16 빨간 직선을 계속 표시(사라지지 않게)하고 즉시 종료.
+        this.rebuildDiceAoes(diceAttacks(DICE_FIRE_MS + 500, config));
+        this.running = false;
+        this.state.gimmickPhase = "failed";
+        this.log("기믹 종료: 일부 실패 포함 (빨간 직선 유지)");
+      } else {
+        // 성공: 범위 제거 후 전원 가운데로 집결.
+        this.state.aoes.splice(0, this.state.aoes.length);
+        this.state.gimmickPhase = "success";
+        this.log("✅ 주사위 직선 모두 1대씩 회피 성공 → 가운데 집결");
       }
     }
+  }
 
-    if (t >= DICE_TOTAL_MS) {
-      this.running = false;
-      this.state.aoes.splice(0, this.state.aoes.length);
-      this.state.gimmickPhase = this.failed ? "failed" : "success";
-      this.log(this.failed ? "기믹 종료: 일부 실패 포함" : "✅ 기믹 성공");
-    }
+  // 성공 후 전원(봇·플레이어)을 가운데 집결 위치로 이동.
+  private gatherToCenter(dtMs: number) {
+    const step = PLAYER_MOVE_SPEED * Math.max(0, dtMs / 1000);
+    this.state.players.forEach((p) => {
+      if (!isPlayerRole(p.role)) return;
+      const target = diceGatherPosition(p.role);
+      const dx = target.x - p.x;
+      const dz = target.z - p.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= step || dist <= 0.001) {
+        p.x = target.x;
+        p.z = target.z;
+        return;
+      }
+      p.x += (dx / dist) * step;
+      p.z += (dz / dist) * step;
+      p.rotation = Math.atan2(dx, dz);
+    });
   }
 
   private rebuildDiceAoes(attacks: ReturnType<typeof diceAttacks>) {
